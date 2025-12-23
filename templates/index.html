@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="section-title">Select a reference listing</h2>
+<p class="muted">
+  Search in the table, click a row to select a listing, then set your preferences and run “Find Similar”.
+</p>
+
+<div class="toolbar">
+  <div class="searchbox">
+    <label class="label" for="searchInput">Search</label>
+    <input id="searchInput" class="input" type="text" placeholder="Type to filter listings (name, city, country, id)…">
+  </div>
+
+  <div class="selectedbox">
+    <div class="label">Selected listing</div>
+    <div id="selectedDisplay" class="selected-pill">None</div>
+  </div>
+</div>
+
+<div class="table-wrap">
+  <table id="listingsTable" class="table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Listing</th>
+        <th>City</th>
+        <th>Country</th>
+        <th>Price</th>
+        <th>Rating</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in listings %}
+      <tr class="row" data-id="{{ r.id }}">
+        <td>{{ r.id }}</td>
+        <td>{{ r.name }}</td>
+        <td>{{ r.city }}</td>
+        <td>{{ r.country }}</td>
+        <td>${{ r.price }}</td>
+        <td>{{ r.rating }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<hr class="divider">
+
+<h2 class="section-title">Find similar listings</h2>
+
+<form method="POST" class="form">
+  <!-- This hidden input is set when the user clicks a table row -->
+  <input type="hidden" name="selected_listing_id" id="selectedListingId" value="">
+
+  <div class="grid">
+    <div class="field">
+      <label class="label" for="target_country">Target country</label>
+      <select class="select" name="target_country" id="target_country" required>
+        <option value="" disabled selected>Select a country</option>
+        {% for c in countries %}
+          <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field">
+      <label class="label" for="k">Number of similar listings (k)</label>
+      <select class="select" name="k" id="k">
+        {% for val in range(1, 11) %}
+          <option value="{{ val }}" {% if val == 5 %}selected{% endif %}>{{ val }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="prefs">
+    <div class="prefs-title">Preferences (0–100)</div>
+    <div class="prefs-grid">
+      <div class="pref">
+        <div class="pref-head">
+          <span>Environment importance</span>
+          <span id="envVal" class="pref-val">50</span>
+        </div>
+        <input type="range" min="0" max="100" value="50" name="pref_environment" id="pref_environment">
+      </div>
+
+      <div class="pref">
+        <div class="pref-head">
+          <span>Host quality importance</span>
+          <span id="hostVal" class="pref-val">50</span>
+        </div>
+        <input type="range" min="0" max="100" value="50" name="pref_host" id="pref_host">
+      </div>
+
+      <div class="pref">
+        <div class="pref-head">
+          <span>Property quality importance</span>
+          <span id="propVal" class="pref-val">50</span>
+        </div>
+        <input type="range" min="0" max="100" value="50" name="pref_property" id="pref_property">
+      </div>
+
+      <div class="pref">
+        <div class="pref-head">
+          <span>Cost sensitivity</span>
+          <span id="costVal" class="pref-val">50</span>
+        </div>
+        <input type="range" min="0" max="100" value="50" name="pref_cost" id="pref_cost">
+      </div>
+    </div>
+    <p class="muted small">
+      Higher cost sensitivity means the ranking should prioritize cheaper options more strongly.
+    </p>
+  </div>
+
+  <div class="actions">
+    <button type="submit" class="btn">Find Similar</button>
+    <button type="button" class="btn secondary" id="clearSelection">Clear selection</button>
+  </div>
+</form>
+
+{% if result %}
+  <div class="result">
+    <div class="result-title">Status</div>
+    <div class="result-body">{{ result }}</div>
+  </div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // --- Table search ---
+  const searchInput = document.getElementById("searchInput");
+  const table = document.getElementById("listingsTable");
+  const rows = Array.from(table.querySelectorAll("tbody tr"));
+
+  searchInput.addEventListener("input", () => {
+    const q = searchInput.value.toLowerCase();
+    rows.forEach(r => {
+      const text = r.innerText.toLowerCase();
+      r.style.display = text.includes(q) ? "" : "none";
+    });
+  });
+
+  // --- Row selection ---
+  const selectedDisplay = document.getElementById("selectedDisplay");
+  const selectedListingId = document.getElementById("selectedListingId");
+  let selectedRow = null;
+
+  rows.forEach(r => {
+    r.addEventListener("click", () => {
+      if (selectedRow) selectedRow.classList.remove("selected");
+      selectedRow = r;
+      r.classList.add("selected");
+      const id = r.getAttribute("data-id");
+      selectedListingId.value = id;
+      selectedDisplay.textContent = "Listing ID: " + id;
+    });
+  });
+
+  document.getElementById("clearSelection").addEventListener("click", () => {
+    if (selectedRow) selectedRow.classList.remove("selected");
+    selectedRow = null;
+    selectedListingId.value = "";
+    selectedDisplay.textContent = "None";
+  });
+
+  
+  function bindRange(rangeId, labelId) {
+    const range = document.getElementById(rangeId);
+    const label = document.getElementById(labelId);
+    const update = () => label.textContent = range.value;
+    range.addEventListener("input", update);
+    update();
+  }
+  bindRange("pref_environment", "envVal");
+  bindRange("pref_host", "hostVal");
+  bindRange("pref_property", "propVal");
+  bindRange("pref_cost", "costVal");
+</script>
+{% endblock %}

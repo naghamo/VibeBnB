@@ -1,18 +1,21 @@
 from pyspark.sql.functions import col, regexp_replace
 from pyspark.sql.functions import col, split, trim, lower, size
+from pyspark.sql import SparkSession
+from spark_session import get_spark
+
+spark = get_spark()
 
 def airbnb_select(airbnb):
     airbnb_sel = airbnb.select(
     "property_id",
     "listing_name",
-    "listing_title",
-
+ 
     "lat",
     "long",
     "location",
 
     "ratings",
-    "reviews",
+    # "reviews",
     "property_number_of_reviews",
 
     "host_rating",
@@ -31,12 +34,12 @@ def airbnb_select(airbnb):
     "description",
     "description_items",
     "details",
-    "arrangement_details",
+    # "arrangement_details",
 
     "pricing_details",
     "total_price",
     "currency",
-    "discount",
+    # "discount",
 
     "availability",
     "final_url"
@@ -52,6 +55,8 @@ def airbnb_clean(airbnb_sel):
 
     
 def airbnb_load():
+    spark = SparkSession.builder.getOrCreate()
+
     storage_account = "lab94290"  
     container = "airbnb"
     sas_token="sp=rle&st=2025-12-24T17:37:04Z&se=2026-02-28T01:52:04Z&spr=https&sv=2024-11-04&sr=c&sig=a0lx%2BS6PuS%2FvJ9Tbt4NKdCJHLE9d1Y1D6vpE1WKFQtk%3D"
@@ -64,9 +69,6 @@ def airbnb_load():
     airbnb_sel = airbnb_select(airbnb)
     airbnb_clean_df = airbnb_clean(airbnb_sel)
     return airbnb_clean_df
-
-airbnb=airbnb_load()
-airbnb.show(5)
 
 
 

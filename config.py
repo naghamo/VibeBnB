@@ -2,55 +2,106 @@ R_M = 1000.0
 EARTH_R = 6371000.0
 DELTA_LAT = R_M / 111000.0
 
-
 continents = {
-    "Africa": [
-        "South Africa","Morocco","Egypt","Kenya","Nigeria","Ghana","Senegal","Tunisia",
-        "Algeria","Ethiopia","Uganda","Tanzania","Rwanda","Zimbabwe","Cameroon","Namibia",
-        "Botswana","Zambia","Malawi","Lesotho","Liberia","Sierra Leone","Gambia","Sudan",
-        "South Sudan","Niger","Chad","Congo","Democratic Republic of the Congo",
-        "Burkina Faso","Benin","Togo","Guinea","Guinea-Bissau","Gabon","Mali",
-        "Central African Republic","Libya","Somalia","Djibouti","Equatorial Guinea",
-        "Mauritius","Seychelles","Cabo Verde","São Tomé & Príncipe","Mayotte"
+    "africa": [
+        "AO","BF","BI","BJ","BW","CD","CF","CG","CI","CM","CV","DJ","DZ","EG","EH","ER","ES","ET",
+        "GA","GH","GM","GN","GQ","GW","IL","KE","KM","LR","LS","LY","MA","MG","ML","MR","MU","MW",
+        "MZ","NA","NE","NG","RE","RW","SC","SD","SH","SL","SN","SO","SS","ST","SZ","TD","TF","TG",
+        "TN","TZ","UG","YT","ZA","ZM","ZW"
     ],
 
-    "Asia": [
-        "India","Thailand","South Korea","Japan","Turkey","Vietnam","Malaysia",
-        "Philippines","Sri Lanka","Pakistan","Nepal","Bangladesh","Indonesia",
-        "Cambodia","Laos","Myanmar","Afghanistan","Hong Kong","Taiwan","Singapore",
-        "Mongolia","Kazakhstan","Uzbekistan","Kyrgyzstan","Tajikistan","Armenia",
-        "Azerbaijan","Georgia","Russia","Israel","Saudi Arabia",
-        "United Arab Emirates","Jordan","Lebanon","Iraq","Kuwait","Qatar","Bahrain",
-        "Oman","Palestinian Territories","Timor-Leste"
+    "antarctica": [
+        "AQ","AR","AU","CL","FK","GS","NZ","TF","ZA"
     ],
 
-    "Europe": [
-        "France","Italy","Spain","United Kingdom","Germany","Greece","Croatia",
-        "Portugal","Poland","Norway","Sweden","Denmark","Netherlands","Switzerland",
-        "Austria","Belgium","Ireland","Romania","Czechia","Finland","Hungary",
-        "Slovakia","Slovenia","Bulgaria","Serbia","Ukraine","Latvia","Lithuania",
-        "Estonia","Montenegro","Albania","Bosnia & Herzegovina","North Macedonia",
-        "Malta","Luxembourg","Iceland","Andorra","San Marino","Monaco","Kosovo",
-        "Belarus","Moldova","Liechtenstein","Cyprus"
+    "asia": [
+        "AE","AF","AM","AZ","BD","BH","BN","BT","CN","EG","GE","HK","ID","IL","IN","IQ","IR","JO",
+        "JP","KG","KH","KP","KR","KW","KZ","LA","LB","LK","MM","MN","MO","MP","MV","MY","NP","OM",
+        "PH","PK","PS","QA","RU","SA","SG","SY","TH","TJ","TL","TM","TR","TW","UA","UZ","VN","YE"
     ],
 
-    "North America": [
-        "United States","Canada","Mexico","Costa Rica","Dominican Republic",
-        "Guatemala","Panama","El Salvador","Honduras","Nicaragua","Cuba","Jamaica",
-        "Haiti","Bahamas","Barbados","Trinidad & Tobago","Belize","Grenada","Dominica",
-        "St Lucia","St Vincent & Grenadines","St Kitts & Nevis","Antigua & Barbuda",
-        "Puerto Rico","US Virgin Islands","British Virgin Islands","Cayman Islands",
-        "Turks & Caicos Islands","Bermuda","Greenland"
+    "australia_oceania": [
+        "AS","AU","CC","CK","CL","CX","FJ","FM","GU","ID","KI","MH","MP","MX","NC","NF","NR","NU",
+        "NZ","PF","PG","PN","PW","SB","TF","TK","TO","TV","VU","WF","WS"
     ],
 
-    "South America": [
-        "Brazil","Colombia","Argentina","Chile","Peru","Ecuador","Uruguay",
-        "Bolivia","Venezuela","Paraguay","Suriname","Guyana","French Guiana"
+    "central_america": [
+        "AG","AI","AW","BB","BL","BQ","BS","BZ","CO","CR","CU","CW","DM","DO","GD","GP","GT","HN",
+        "HT","JM","KN","KY","LC","MF","MQ","MS","MX","NI","PA","PR","SV","SX","TC","TT","VC","VE",
+        "VG","VI"
     ],
 
-    "Oceania": [
-        "Australia","New Zealand","Fiji","Samoa","Tonga","Vanuatu","Solomon Islands",
-        "Micronesia","Kiribati","Tuvalu","Niue","Palau","Cook Islands","Norfolk Island",
-        "New Caledonia","French Polynesia","Wallis & Futuna","Christmas Island"
+    "europe": [
+        "AD","AL","AM","AT","AX","AZ","BA","BE","BG","BY","CH","CY","CZ","DE","DK","DZ","EE","ES",
+        "FI","FO","FR","GB","GE","GG","GI","GR","HR","HU","IE","IM","IQ","IR","IS","IT","JE","LI",
+        "LT","LU","LV","MC","MD","ME","MK","MT","NL","NO","PL","PT","RO","RS","RU","SE","SI","SJ",
+        "SK","SM","SY","TN","TR","UA","VA","XK"
+    ],
+
+    "north_america": [
+        "BM","CA","GL","GT","IS","MX","PM","RU","SJ","US"
+    ],
+
+    "south_america": [
+        "AR","AW","BO","BQ","BR","CL","CO","CW","EC","FK","GF","GS","GY","MS","PA","PE","PY","SR",
+        "TT","UY","VE"
     ]
 }
+
+
+
+NUM_COLS = [
+    "ratings",
+    "property_number_of_reviews",
+    "host_rating",
+    "host_number_of_reviews",
+    "host_response_rate",
+    "hosts_year",
+    "is_supperhost",
+    "is_guest_favorite",
+    "rating_cleanliness",
+    "rating_accuracy",
+    "rating_checkin",
+    "rating_communication",
+    "rating_location",
+    "rating_value",
+    "price_per_night",
+    
+    "num_of_nights",
+    "guests",
+    "is_available",
+
+
+     "n_beds",
+    "n_baths",
+    "n_bedrooms",         
+
+]
+TEXT_COLS = ["listing_title", "amenities_has_text","room_type_text","description"]
+ENV_GROUPS =["Sightseeing",
+    "Culture",
+    "Family",
+    "Nightlife",
+    "Food",
+    "Nature",
+    "Transport",
+    "Leisure",
+    "Shopping",
+    "Supplies",
+    "Services",
+    "Health"]
+ENV_COLS = [
+    "env_culture",
+    "env_family",
+    "env_food",
+    "env_health",
+    "env_leisure",
+    "env_nature",
+    "env_nightlife",
+    "env_services",
+    "env_shopping",
+    "env_sightseeing",
+    "env_supplies",
+    "env_transport",
+]
+

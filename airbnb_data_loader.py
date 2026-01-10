@@ -71,7 +71,7 @@ class AirbnbConfig:
     
     TEXT_COLUMNS = [
         "amenities", "description", "description_items", 
-        "details", "arrangement_details"
+        "details"
     ]
     
     PRICING_COLUMNS = [
@@ -470,6 +470,10 @@ def add_geographic_enrichment(df: DataFrame) -> DataFrame:
     ).drop("geo_data")
     
     return df_geo
+
+# =============================================================================
+# Listing features cleaning
+# =============================================================================
 
 def create_listing_features_udf():
     listing_features_schema = get_listing_features_schema()
@@ -914,6 +918,20 @@ def normalize_currency_to_usd(df: DataFrame) -> DataFrame:
     
     return df_usd
 
+def filter_price_outliers(df: DataFrame, max_price: float = 1000.0) -> DataFrame:
+    """
+    Filter out rows where price_per_night exceeds a threshold (e.g., $1000).
+    """
+    initial_count = df.count()
+    
+    # Keep rows where price is LESS than or EQUAL to max_price
+    df_filtered = df.filter(col("price_per_night") <= max_price)
+    
+    dropped = initial_count - df_filtered.count()
+    print(f"Dropped {dropped:,} rows with price > ${max_price}")
+    
+    return df_filtered
+
 
 # =============================================================================
 # Statistical Imputation
@@ -1044,7 +1062,7 @@ def select_final_columns(df: DataFrame) -> DataFrame:
         "rating_checkin", "rating_communication", "rating_location", "rating_value",
         
         # Text features
-        "amenities", "description", "description_items", "details", "arrangement_details",
+        "amenities", "description", "description_items", "details",
         
         # Pricing (normalized)
         "price_per_night", "num_of_nights", "guests",
@@ -1052,8 +1070,11 @@ def select_final_columns(df: DataFrame) -> DataFrame:
         # Availability
         "is_available", "final_url"
     ] + AirbnbConfig.DERIVED_COLUMNS
+
+    log_cols = [c for c in df.columns if c.startswith("log_1p_")]
     
-    return df.select(*final_cols)
+    # Combine the lists
+    return df.select(*(final_cols + log_cols))
 
 
 # =============================================================================
@@ -1142,6 +1163,19 @@ def load_airbnb_data(spark: SparkSession) -> DataFrame:
     print("\nStep 12: Filling text defaults...")
     df = fill_text_defaults(df)
     
+    # ==========================================================
+    # ==========================================================
+    print("\nStep 12.5: Filtering price outliers...")
+    # This filters OUT rows > k (keeps rows <= k)
+    df = filter_price_outliers(df, max_price=1300.0)
+
+    # print("\nStep 12.5.5: Applying Log1p Normalization...") # lol
+    # # Define the columns you want to normalize (usually skewed numeric data)
+    # cols_to_log = ["price_per_night", "property_number_of_reviews" "host_number_of_reviews"]
+    # df = apply_log1p_transform(df, cols_to_log)
+    # ==========================================================
+    # ==========================================================
+
     # Step 13: Final selection
     print("\nStep 13: Selecting final columns...")
     df = select_final_columns(df)
@@ -1169,6 +1203,28 @@ def save_processed_data(df: DataFrame, output_path: str, mode: str = "overwrite"
     print(f"\nSaving processed data to: {output_path}")
     df.write.mode(mode).parquet(output_path)
     print("Save complete!")
+
+def apply_log1p_transform(df: DataFrame, columns: List[str]) -> DataFrame:
+    """
+    Applies log1p transformation (log(x + 1)) to specified columns.
+    Creates new columns named 'log_1p_{col_name}'.
+    
+    Args:
+        df: Input DataFrame
+        columns: List of column names to transform
+        
+    Returns:
+        DataFrame with new log-transformed columns
+    """
+    df_log = df
+    for col_name in columns:
+        # Check if column exists to avoid errors
+        if col_name in df.columns:
+            df_log = df_log.withColumn(f"log_1p_{col_name}", F.log1p(col(col_name)))
+        else:
+            print(f"Warning: Column '{col_name}' not found, skipping log transform.")
+            
+    return df_log
 
 
 if __name__ == "__main__":

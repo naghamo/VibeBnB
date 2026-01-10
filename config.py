@@ -2,6 +2,11 @@ R_M = 1000.0
 EARTH_R = 6371000.0
 DELTA_LAT = R_M / 111000.0
 
+
+EMBEDDED_PATH = "dbfs:/vibebnb/data/europe_countries_embedded"          
+LSH_MODEL_PATH = "dbfs:/vibebnb/models/lsh_global"
+FULL_PATH = "dbfs:/vibebnb/data/europe_countries_scored.parquet"
+
 continents = {
     "africa": [
         "AO","BF","BI","BJ","BW","CD","CF","CG","CI","CM","CV","DJ","DZ","EG","EH","ER","ES","ET",
@@ -48,36 +53,17 @@ continents = {
     ]
 }
 
+TEXT_COLS_DEFAULT = ["listing_title", "amenities_text","room_type_text","description"]
 
 
-NUM_COLS = [
-    "ratings",
-    "property_number_of_reviews",
-    "host_rating",
-    "host_number_of_reviews",
-    "host_response_rate",
-    "hosts_year",
-    "is_supperhost",
-    "is_guest_favorite",
-    "rating_cleanliness",
-    "rating_accuracy",
-    "rating_checkin",
-    "rating_communication",
-    "rating_location",
-    "rating_value",
-    "price_per_night",
-    
-    "num_of_nights",
-    "guests",
-    "is_available",
-
-
-     "n_beds",
+SCORED_NUM_COLS = [
+    "price_score",
+    "property_quality",
+    "host_quality",
+    "n_beds",
     "n_baths",
-    "n_bedrooms",         
-
+    "n_bedrooms", 
 ]
-TEXT_COLS = ["listing_title", "amenities_has_text","room_type_text","description"]
 ENV_GROUPS =["Sightseeing",
     "Culture",
     "Family",

@@ -101,4 +101,57 @@ def build_query_suite(df_all, df_emb, n_queries):
     dest_countries = random.sample(cc_pool, k=n_queries)
     queries['dest_country'] = dest_countries
 
+    print("\nFinished.")
+
     return queries
+
+
+def retrieve_suite_results(df_emb, query_suite):
+
+    # Retrieve top 50 for each query, and save it to a dataframe
+    query_suite_pd = query_suite.toPandas()
+    suite_results = None
+    n_candidates = 50
+    print(f"Starting retrieval for {len(query_suite_pd)} queries...")
+
+    for i, row in query_suite_pd.iterrows():
+        prop_id = row["property_id"]
+        prop_cc = row["country_code"]
+        dest_cc = row["dest_country"]
+        print("\n---------------------------")
+        print(f"Retrieving {n_candidates} candidates for query n. {i+1}...")
+        print(f"prop_id: {prop_id}, prop_cc: {prop_cc}, dest_cc: {dest_cc}")
+        t0 = time.perf_counter()
+        cand_df = retrieve(
+            target_id=prop_id,
+            country=dest_cc,
+            df=df_emb,
+            lsh_model=lsh_model,
+            n=n_candidates
+        )
+
+        i_suite_results = (
+            cand_df
+            .withColumn("target_id", F.lit(prop_id))
+            .withColumn("target_cc", F.lit(prop_cc))
+            .withColumn("cand_cc", F.lit(dest_cc))
+        )
+
+        if suite_results:
+            suite_results = suite_results.union(i_suite_results)
+        else:
+            suite_results = i_suite_results
+
+        t1 = time.perf_counter()
+        print(f"Retrieved candidates in {(t1 - t0):.2f}s!")
+
+    suite_results = (   
+        suite_results
+        .select(['property_id', 'cand_cc', 'target_id', 'target_cc', 'features_norm', 'hashes', 'l2_dist'])
+        .withColumnRenamed('property_id', 'cand_id')
+        .withColumn('cosine_similarity', 1 - (F.col('l2_dist') ** 2) / 2.0)
+    )
+
+    print("\nFinished.")
+
+    return suite_results

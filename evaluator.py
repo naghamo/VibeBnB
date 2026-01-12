@@ -8,11 +8,12 @@ import random
 import pandas as pd
 import warnings
 
+warnings.filterwarnings("ignore")
 
 EUROPE_CC = set(continents['europe'])
 
-def build_query_suite(df_all, df_emb, n_queries):
-    # find all european countries in data
+def pick_diverse_props(df_all, df_emb, lsh_model, n_props):
+# find all european countries in data
     countries_europe = (
     df_all.select("addr_cc")
           .where(F.col("addr_cc").isNotNull())
@@ -54,7 +55,7 @@ def build_query_suite(df_all, df_emb, n_queries):
 
     queries = queries.append({'property_id': seed_prop_id, 'country_code': seed_country}, ignore_index=True)
 
-    for i in range(n_queries-1):
+    for i in range(n_props-1):
         # pick the next random country
         dest_cc = random.choice(cc_pool)
         cc_pool.remove(dest_cc)
@@ -98,6 +99,21 @@ def build_query_suite(df_all, df_emb, n_queries):
         seed_country = dest_cc
         seed_prop_id = furthest_prop_id
 
+    return queries
+
+
+def build_query_suite_one_dest(df_all, df_emb, lsh_model, n_queries=24):
+    """
+    Builds a query suite, where each query is a property and a destination country.
+    The queries are picked so that they will be diverse - they are far from each other in the embedding space.
+    Here, each query recieves one random destination country.
+
+    :param df_all: the entire dataset
+    :param df_emb: the embedding dataframe
+    :param lsh_model: the LSH model
+    :param n_queries: the number of queries to build
+    """
+    queries = pick_diverse_props(df_all, df_emb, lsh_model, n_props=n_queries)
     dest_countries = random.sample(cc_pool, k=n_queries)
     queries['dest_country'] = dest_countries
 
@@ -105,6 +121,26 @@ def build_query_suite(df_all, df_emb, n_queries):
 
     return queries
 
+def build_query_suite_multiple_countries(df_all, df_emb, lsh_model, n_props=10, n_countries=3):
+    """
+    Builds a query suite, where each query is a property and a destination country.
+    The queries are picked so that they will be diverse - they are far from each other in the embedding space.
+    Here, each query recieves n_countries random destination countries.
+    In total, this returns n_props * n_countries queries.
+
+    :param df_all: the entire dataset
+    :param df_emb: the embedding dataframe
+    :param lsh_model: the LSH model
+    :param n_props: the number of diverse properties to pick
+    :param n_countries: the number of countries that will be used as destinations
+    """
+    queries = pick_diverse_props(df_all, df_emb, lsh_model, n_props=n_props)
+    dest_countries = random.sample(cc_pool, k=n_countries)
+    queries = queries.merge(pd.DataFrame(dest_countries, columns=["dest_country"]), how="cross")
+
+    print("\nFinished.")
+
+    return queries
 
 def retrieve_suite_results(df_emb, query_suite):
 

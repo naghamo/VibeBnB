@@ -3,10 +3,14 @@ from pyspark.storagelevel import StorageLevel
 from pyspark.ml.feature import BucketedRandomProjectionLSHModel
 from retrieve_rank import retrieve, order
 from config import *
+import matplotlib.pyplot as plt
 import time
 import random
 import pandas as pd
+import numpy as np
 import warnings
+import joypy
+
 
 warnings.filterwarnings("ignore")
 
@@ -99,7 +103,7 @@ def pick_diverse_props(df_all, df_emb, lsh_model, n_props):
         seed_country = dest_cc
         seed_prop_id = furthest_prop_id
 
-    return queries
+    return queries, cc_pool
 
 
 def build_query_suite_one_dest(df_all, df_emb, lsh_model, n_queries=24):
@@ -113,7 +117,7 @@ def build_query_suite_one_dest(df_all, df_emb, lsh_model, n_queries=24):
     :param lsh_model: the LSH model
     :param n_queries: the number of queries to build
     """
-    queries = pick_diverse_props(df_all, df_emb, lsh_model, n_props=n_queries)
+    queries, cc_pool = pick_diverse_props(df_all, df_emb, lsh_model, n_props=n_queries)
     dest_countries = random.sample(cc_pool, k=n_queries)
     queries['dest_country'] = dest_countries
 
@@ -134,7 +138,7 @@ def build_query_suite_multiple_countries(df_all, df_emb, lsh_model, n_props=10, 
     :param n_props: the number of diverse properties to pick
     :param n_countries: the number of countries that will be used as destinations
     """
-    queries = pick_diverse_props(df_all, df_emb, lsh_model, n_props=n_props)
+    queries, cc_pool = pick_diverse_props(df_all, df_emb, lsh_model, n_props=n_props)
     dest_countries = random.sample(cc_pool, k=n_countries)
     queries = queries.merge(pd.DataFrame(dest_countries, columns=["dest_country"]), how="cross")
 
@@ -142,10 +146,12 @@ def build_query_suite_multiple_countries(df_all, df_emb, lsh_model, n_props=10, 
 
     return queries
 
-def retrieve_suite_results(df_emb, query_suite):
+def retrieve_suite_results(df_emb, lsh_model, query_suite):
 
     # Retrieve top 50 for each query, and save it to a dataframe
-    query_suite_pd = query_suite.toPandas()
+    if not type(query_suite) == pd.DataFrame:
+        query_suite_pd = query_suite.toPandas()
+        
     suite_results = None
     n_candidates = 50
     print(f"Starting retrieval for {len(query_suite_pd)} queries...")
@@ -191,3 +197,37 @@ def retrieve_suite_results(df_emb, query_suite):
     print("\nFinished.")
 
     return suite_results
+
+def create_ridge_plot(suite_results_pd):
+    """
+    Plots a ridge plot where each ridge is a property from the queries, and a kde plot for each country is plotted.
+
+    :param suite_results_pd: the query suite results dataframe
+    """
+    ccs = sorted(suite_results_pd["cand_cc"].unique())
+
+    # Build a "wide" DF: one column per cand_cc holding cosine_similarity, NaN otherwise
+    wide = suite_results_pd[["target_id", "cand_cc", "cosine_similarity"]].copy()
+    for cc in ccs:
+        wide[cc] = np.where(wide["cand_cc"].eq(cc), wide["cosine_similarity"], np.nan)
+
+    wide = wide.drop(columns=["cand_cc", "cosine_similarity"])
+
+    # Choose distinct colors (consistent per cand_cc)
+    colors = [plt.cm.tab10(i % 10) for i in range(len(ccs))]
+
+    fig, axes = joypy.joyplot(
+        wide,
+        by="target_id",
+        column=ccs,
+        color=colors,
+        legend=True,
+        overlap=2,
+        linewidth=1,
+        alpha=0.6,
+        figsize=(8, 10),
+        fade=False
+    )
+
+    plt.title("Ridgeline Plot: cosine_similarity by cand_cc (overlaid per target_id)")
+    plt.show()

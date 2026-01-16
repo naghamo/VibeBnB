@@ -9,7 +9,6 @@ import random
 import pandas as pd
 import numpy as np
 import warnings
-import joypy
 
 
 warnings.filterwarnings("ignore")
@@ -177,14 +176,15 @@ def build_MCQS(df_all, df_emb, lsh_model, n_props=10, countries=3):
         dest_countries = countries
 
     queries, cc_pool = pick_diverse_props(df_all, df_emb, lsh_model, n_props=n_props, exclude_countries=dest_countries)
+    targets_data = df_all.join(spark.createDataFrame(queries), on='property_id', how='inner')
     
     queries = queries.merge(pd.DataFrame(dest_countries, columns=["dest_country"]), how="cross")
 
     print("\nFinished.")
 
-    return queries
+    return queries, targets_data
 
-def retrieve_suite_results(df_emb, lsh_model, query_suite):
+def retrieve_suite_results(df_all, df_emb, lsh_model, query_suite):
 
     # Retrieve top 50 for each query, and save it to a dataframe
     if not type(query_suite) == pd.DataFrame:
@@ -234,11 +234,14 @@ def retrieve_suite_results(df_emb, lsh_model, query_suite):
         .withColumn('cosine_similarity', 1 - (F.col('l2_dist') ** 2) / 2.0)
     )
 
-    print("\nFinished.")
+    # Join suite results with data
+    suite_results = suite_results.join(df_all, on=[suite_results['cand_id']==df_all['property_id']], how='inner')
+
+    print("\n[QSM] Finished retrieval.")
 
     return suite_results
 
-def build_MCQS_and_results(df_all_path, df_emb_path, lsh_model_path, MCQS_out_path, MCQS_results_out_path):
+def build_MCQS_and_save_results(df_all_path, df_emb_path, lsh_model_path, MCQS_out_path, MCQS_data_path, MCQS_results_out_path):
 
     # Load the dataframes and lsh model
     t0 = time.perf_counter()
@@ -273,32 +276,35 @@ def build_MCQS_and_results(df_all_path, df_emb_path, lsh_model_path, MCQS_out_pa
 
 
     # Build the multiple countries query suite
-    query_suite = build_MCQS(df_all, df_emb, lsh_model, n_props=N_PROPS_MCQS, countries=dest_ccs)
+    query_suite, targets_data = build_MCQS(df_all, df_emb, lsh_model, n_props=N_PROPS_MCQS, countries=dest_ccs)
 
     print("[QSM] Resulted multiple countries query suite:")
     print(query_suite)
-
     (
         spark.createDataFrame(query_suite)
         .write
         .mode("overwrite")
         .parquet(MCQS_out_path)
     )
-
-    print(f"[QSM] Saved multiple countries query suite to {MCQS_out_path}")
+    print(f"[QSM] Saved multiple countries QUERY SUITE to {MCQS_out_path}")
+    
+    targets_data.write.mode("overwrite").parquet(MCQS_data_path)
+    print(f"[QSM] Saved multiple countries query suite DATA to {MCQS_data_path}")
 
     # Retrieve the MCQS results
-    suite_results = retrieve_suite_results(df_emb, lsh_model, query_suite)
-
+    suite_results = retrieve_suite_results(df_all, df_emb, lsh_model, query_suite)
     suite_results.write.mode("overwrite").parquet(MCQS_results_out_path)
+    print(f"[QSM] Saved multiple countries query suite RETRIEVAL RESULTS to {MCQS_results_out_path}")
+    print("[QSM] Done!")
 
-    print(f"[QSM] Saved multiple countries query suite retrieval results to {MCQS_results_out_path}")
+# MCQS_DATA_PATH = "dbfs:/vibebnb/data/query_suite_multiple_countries_data.parquet"
 
 
-build_MCQS_and_results(
+build_MCQS_and_save_results(
     df_all_path=FULL_PATH,
     df_emb_path=EMBEDDED_PATH,
     lsh_model_path=LSH_MODEL_PATH,
     MCQS_out_path=MCQS_PATH,
+    MCQS_data_path=MCQS_DATA_PATH,
     MCQS_results_out_path=MCQS_RESULTS_PATH
 )

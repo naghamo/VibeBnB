@@ -14,10 +14,21 @@ import joypy
 
 warnings.filterwarnings("ignore")
 
+N_PROPS_MCQS = 10
 EUROPE_CC = set(continents['europe'])
 
-def pick_diverse_props(df_all, df_emb, lsh_model, n_props):
-# find all european countries in data
+def pick_diverse_props(df_all, df_emb, lsh_model, n_props, exclude_countries=[]):
+    """
+    Picks a series of properties from the dataset, trying to maximize the diversity of the resulting set by euclidean distance.
+
+    :param df_all: A dataframe containing all properties and their data.
+    :param df_emb: A dataframe containing the embeddings of all properties.
+    :param lsh_model: A BucketedRandomProjectionLS model.
+    :param n_props: The number of properties to pick.
+    :param exclude_coutries: A list of countries to exclude from the search (that might be used as destinations later on).
+    :return: A list of property ids.
+    """
+    # find all european countries in data
     countries_europe = (
     df_all.select("addr_cc")
           .where(F.col("addr_cc").isNotNull())
@@ -29,6 +40,8 @@ def pick_diverse_props(df_all, df_emb, lsh_model, n_props):
           .tolist()
     )
 
+    countries_europe = list(set(countries_europe) - set(exclude_countries))
+
     # country value counts df will be used to search for suitable queries from all data
     country_value_counts = (
     df_all.select("addr_cc")
@@ -37,13 +50,13 @@ def pick_diverse_props(df_all, df_emb, lsh_model, n_props):
           .toPandas()
     )
 
-    print("Initializing variables...")
+    print("[QSM] Initializing variables...")
     cc_pool = countries_europe.copy()
     queries = pd.DataFrame(columns=['property_id','country_code'])
     seed_country = random.choice(cc_pool)
     cc_pool.remove(seed_country)
 
-    print("Picking the first seed property...")
+    print("[QSM] Picking the first seed property...")
     t_0 = time.perf_counter()
     # pick a random property from that country
     seed_prop_id = (
@@ -54,8 +67,8 @@ def pick_diverse_props(df_all, df_emb, lsh_model, n_props):
             .toPandas()["property_id"].values[0]
     )
     t_1 = time.perf_counter()
-    print(f"Found initial seed property in {(t_1 - t_0):.2f}s.")
-    print(f"Starting query suite building process from property {seed_prop_id} in {seed_country}!")
+    print(f"[QSM] Found initial seed property in {(t_1 - t_0):.2f}s.")
+    print(f"[QSM] Starting query suite building process from property {seed_prop_id} in {seed_country}!")
 
     queries = queries.append({'property_id': seed_prop_id, 'country_code': seed_country}, ignore_index=True)
 
@@ -106,7 +119,25 @@ def pick_diverse_props(df_all, df_emb, lsh_model, n_props):
     return queries, cc_pool
 
 
-def build_query_suite_one_dest(df_all, df_emb, lsh_model, n_queries=24):
+def pick_smallest_and_largest_ccs(df_all, n_from_each=3):
+    """
+    Pick the smallest and largest country codes by frequency, and return them as lists.
+    :param df_all: the entire airbnb dataset
+    :param n_from_each: the number of country codes to return for each of the two groups
+    :return: a tuple of two lists, the first being the smallest country codes, the second being the largest
+    """
+    country_value_counts = (
+        df_all.select(['addr_cc'])
+            .groupBy('addr_cc')
+            .count()
+            .orderBy(F.col('count').asc())
+    )
+    smallest_ccs = country_value_counts.limit(n_from_each).toPandas()['addr_cc'].values
+    largest_ccs = country_value_counts.orderBy(F.col('count').desc()).limit(n_from_each).toPandas()['addr_cc'].values
+    return list(smallest_ccs), list(largest_ccs)
+
+
+def build_OCQS(df_all, df_emb, lsh_model, n_queries=24):
     """
     Builds a query suite, where each query is a property and a destination country.
     The queries are picked so that they will be diverse - they are far from each other in the embedding space.
@@ -125,21 +156,28 @@ def build_query_suite_one_dest(df_all, df_emb, lsh_model, n_queries=24):
 
     return queries
 
-def build_query_suite_multiple_countries(df_all, df_emb, lsh_model, n_props=10, n_countries=3):
+def build_MCQS(df_all, df_emb, lsh_model, n_props=10, countries=3):
     """
     Builds a query suite, where each query is a property and a destination country.
     The queries are picked so that they will be diverse - they are far from each other in the embedding space.
-    Here, each query recieves n_countries random destination countries.
-    In total, this returns n_props * n_countries queries.
+    countries is a polymorphic argument, and can either be a specified list of countries, or an integer, in which case
+    the function will pick a random sample of countries from the pool of countries in the dataset.
 
     :param df_all: the entire dataset
     :param df_emb: the embedding dataframe
     :param lsh_model: the LSH model
     :param n_props: the number of diverse properties to pick
-    :param n_countries: the number of countries that will be used as destinations
+    :param countries: either a specified list of countries, or an integer specifying the number of countries to pick
     """
-    queries, cc_pool = pick_diverse_props(df_all, df_emb, lsh_model, n_props=n_props)
-    dest_countries = random.sample(cc_pool, k=n_countries)
+
+    dest_countries = []
+    if isinstance(countries, int):
+        dest_countries = random.sample(cc_pool, k=countries)
+    elif isinstance(countries, list):
+        dest_countries = countries
+
+    queries, cc_pool = pick_diverse_props(df_all, df_emb, lsh_model, n_props=n_props, exclude_countries=dest_countries)
+    
     queries = queries.merge(pd.DataFrame(dest_countries, columns=["dest_country"]), how="cross")
 
     print("\nFinished.")
@@ -151,10 +189,12 @@ def retrieve_suite_results(df_emb, lsh_model, query_suite):
     # Retrieve top 50 for each query, and save it to a dataframe
     if not type(query_suite) == pd.DataFrame:
         query_suite_pd = query_suite.toPandas()
+    else:
+        query_suite_pd = query_suite
         
     suite_results = None
     n_candidates = 50
-    print(f"Starting retrieval for {len(query_suite_pd)} queries...")
+    print(f"[QSM] Starting retrieval for {len(query_suite_pd)} queries...")
 
     for i, row in query_suite_pd.iterrows():
         prop_id = row["property_id"]
@@ -185,7 +225,7 @@ def retrieve_suite_results(df_emb, lsh_model, query_suite):
             suite_results = i_suite_results
 
         t1 = time.perf_counter()
-        print(f"Retrieved candidates in {(t1 - t0):.2f}s!")
+        print(f"[QSM] Retrieved candidates in {(t1 - t0):.2f}s!")
 
     suite_results = (   
         suite_results
@@ -198,36 +238,67 @@ def retrieve_suite_results(df_emb, lsh_model, query_suite):
 
     return suite_results
 
-def create_ridge_plot(suite_results_pd):
-    """
-    Plots a ridge plot where each ridge is a property from the queries, and a kde plot for each country is plotted.
+def build_MCQS_and_results(df_all_path, df_emb_path, lsh_model_path, MCQS_out_path, MCQS_results_out_path):
 
-    :param suite_results_pd: the query suite results dataframe
-    """
-    ccs = sorted(suite_results_pd["cand_cc"].unique())
+    # Load the dataframes and lsh model
+    t0 = time.perf_counter()
 
-    # Build a "wide" DF: one column per cand_cc holding cosine_similarity, NaN otherwise
-    wide = suite_results_pd[["target_id", "cand_cc", "cosine_similarity"]].copy()
-    for cc in ccs:
-        wide[cc] = np.where(wide["cand_cc"].eq(cc), wide["cosine_similarity"], np.nan)
+    df_emb = (
+        spark.read.parquet(df_emb_path)
+        .select("property_id", "addr_cc", "features_norm")
+        .dropDuplicates(["property_id"])
+        .persist(StorageLevel.MEMORY_AND_DISK)
+    )
+    emb_cnt = df_emb.count()
 
-    wide = wide.drop(columns=["cand_cc", "cosine_similarity"])
+    df_all = (
+        spark.read.parquet(df_all_path)
+        .dropDuplicates(["property_id"])
+        .persist(StorageLevel.MEMORY_AND_DISK)
+    )
+    all_cnt = df_all.count()
 
-    # Choose distinct colors (consistent per cand_cc)
-    colors = [plt.cm.tab10(i % 10) for i in range(len(ccs))]
+    lsh_model = BucketedRandomProjectionLSHModel.load(lsh_model_path)
 
-    fig, axes = joypy.joyplot(
-        wide,
-        by="target_id",
-        column=ccs,
-        color=colors,
-        legend=True,
-        overlap=2,
-        linewidth=1,
-        alpha=0.6,
-        figsize=(8, 10),
-        fade=False
+    t1 = time.perf_counter()
+    print(f"[QSM] Loaded df_emb rows={emb_cnt:,}, df_all rows={all_cnt:,} in {(t1 - t0):.2f}s")
+
+    # Use the 3 least and 3 most frequent country codes as destinations in the query suite
+    smallest_ccs, largest_ccs = pick_smallest_and_largest_ccs(df_all)
+
+    print(f"[QSM] Smallest CCs: {smallest_ccs}")
+    print(f"[QSM] Largest CCs: {largest_ccs}")
+
+    dest_ccs = smallest_ccs + largest_ccs
+
+
+    # Build the multiple countries query suite
+    query_suite = build_MCQS(df_all, df_emb, lsh_model, n_props=N_PROPS_MCQS, countries=dest_ccs)
+
+    print("[QSM] Resulted multiple countries query suite:")
+    print(query_suite)
+
+    (
+        spark.createDataFrame(query_suite)
+        .write
+        .mode("overwrite")
+        .parquet(MCQS_out_path)
     )
 
-    plt.title("Ridgeline Plot: cosine_similarity by cand_cc (overlaid per target_id)")
-    plt.show()
+    print(f"[QSM] Saved multiple countries query suite to {MCQS_out_path}")
+
+    # Retrieve the MCQS results
+    suite_results = retrieve_suite_results(df_emb, lsh_model, query_suite)
+
+    suite_results.write.mode("overwrite").parquet(MCQS_results_out_path)
+
+    print(f"[QSM] Saved multiple countries query suite retrieval results to {MCQS_results_out_path}")
+
+
+build_MCQS_and_results(
+    df_all_path=FULL_PATH,
+    df_emb_path=EMBEDDED_PATH,
+    lsh_model_path=LSH_MODEL_PATH,
+    MCQS_out_path=MCQS_PATH,
+    MCQS_results_out_path=MCQS_RESULTS_PATH
+)

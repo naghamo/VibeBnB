@@ -10,7 +10,7 @@ The pipeline performs:
 2. Column selection and type casting
 3. Geographic enrichment via reverse geocoding
 4. Missing value analysis and imputation
-5. Price normalization (EUR → USD)
+5. Price normalization (EUR -> USD)
 6. Statistical imputation using country-level and global fallbacks
 """
 
@@ -20,7 +20,7 @@ from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
     StructType, StructField, StringType, DoubleType, 
-    IntegerType, ArrayType
+    IntegerType, ArrayType, FloatType, LongType
 )
 from pyspark.sql.functions import (
     col, when, coalesce, lit, broadcast, 
@@ -1169,10 +1169,10 @@ def load_airbnb_data(spark: SparkSession) -> DataFrame:
     # This filters OUT rows > k (keeps rows <= k)
     df = filter_price_outliers(df, max_price=1300.0)
 
-    # print("\nStep 12.5.5: Applying Log1p Normalization...") # lol
-    # # Define the columns you want to normalize (usually skewed numeric data)
-    # cols_to_log = ["price_per_night", "property_number_of_reviews" "host_number_of_reviews"]
-    # df = apply_log1p_transform(df, cols_to_log)
+    print("\nStep 12.5.5: Applying Log1p Normalization...") # lol
+    # Define the columns you want to normalize (usually skewed numeric data)
+    cols_to_log = ["price_per_night", "property_number_of_reviews" "host_number_of_reviews"]
+    df = apply_log1p_transform(df, cols_to_log)
     # ==========================================================
     # ==========================================================
 
@@ -1225,6 +1225,145 @@ def apply_log1p_transform(df: DataFrame, columns: List[str]) -> DataFrame:
             print(f"Warning: Column '{col_name}' not found, skipping log transform.")
             
     return df_log
+
+def analyze_distributions(
+    df: DataFrame,
+    numerical_cols: Optional[List[str]] = None,
+    text_cols: Optional[List[str]] = None,
+    iqr_multiplier: float = 1.5,
+    show_samples: bool = True,
+    skip_all_null_cols: bool = True,
+) -> pd.DataFrame:
+    """
+    Optimized distribution analysis: 2-pass approach (1 stats job + 1 outlier job).
+    Robust to columns that are entirely null (percentile_approx returns None).
+    """
+
+    # Auto-detect Numerical Columns
+    if numerical_cols is None:
+        numerical_cols = []
+        for field in df.schema.fields:
+            if isinstance(field.dataType, (DoubleType, IntegerType, FloatType, LongType)):
+                if not field.name.startswith("is_") and "id" not in field.name.lower():
+                    numerical_cols.append(field.name)
+        print(f"Auto-detected {len(numerical_cols)} numerical columns")
+
+    # Auto-detect Text Columns
+    if text_cols is None:
+        text_cols = []
+        for field in df.schema.fields:
+            if isinstance(field.dataType, StringType):
+                if field.name not in ["addr_cc", "currency", "category", "cancellation_policy"]:
+                    text_cols.append(field.name)
+        print(f"Auto-detected {len(text_cols)} text columns")
+
+    # Create checking DataFrame with length columns
+    len_cols = [F.length(F.col(c)).alias(f"len_{c}") for c in text_cols]
+    df_check = df.select(*numerical_cols, *len_cols)
+
+    all_cols = numerical_cols + [f"len_{c}" for c in text_cols]
+    total_count = df_check.count()
+
+    print(f"\nAnalyzing {len(all_cols)} features ({total_count:,} rows)...")
+
+    # PASS 1: Compute statistics (+ non-null counts)
+    print("Pass 1: Computing global statistics...")
+    stats_exprs = []
+    for c in all_cols:
+        stats_exprs.extend([
+            F.count(F.col(c)).alias(f"{c}_nn"),
+            F.min(c).alias(f"{c}_min"),
+            F.max(c).alias(f"{c}_max"),
+            F.avg(c).alias(f"{c}_mean"),
+            F.stddev(c).alias(f"{c}_std"),
+            # If percentile_approx returns null (all values null), coalesce to [None, None, None]
+            F.coalesce(
+                F.percentile_approx(c, [0.25, 0.5, 0.75], 5000),
+                F.array(F.lit(None), F.lit(None), F.lit(None))
+            ).alias(f"{c}_qs")
+        ])
+
+    stats_row = df_check.agg(*stats_exprs).first()
+
+    # Decide which columns are actually analyzable
+    nn_by_col = {c: int(stats_row[f"{c}_nn"]) for c in all_cols}
+    valid_cols = [c for c in all_cols if nn_by_col[c] > 0]
+    null_only_cols = [c for c in all_cols if nn_by_col[c] == 0]
+
+    if null_only_cols:
+        msg = f"Found {len(null_only_cols)} all-null columns: {null_only_cols}"
+        if skip_all_null_cols:
+            print(msg + " -> skipping")
+        else:
+            print(msg + " -> will include (outliers=0, stats=None)")
+
+    cols_for_outliers = valid_cols if skip_all_null_cols else all_cols
+
+    # PASS 2: Count outliers (batched) only for valid cols
+    print("Pass 2: Checking outlier counts...")
+    outlier_exprs = []
+    fences = {}
+
+    for c in cols_for_outliers:
+        q25, median, q75 = stats_row[f"{c}_qs"]
+
+        # If any quartile is None (should only happen when nn==0, but safe anyway)
+        if q25 is None or q75 is None:
+            fences[c] = (None, None)
+            outlier_exprs.append(F.lit(0).alias(f"{c}_outliers"))
+            continue
+
+        iqr = q75 - q25
+        if iqr == 0 or iqr is None:
+            iqr = 0.01  # tiny value to avoid 0-width fences
+
+        lower = q25 - (iqr_multiplier * iqr)
+        upper = q75 + (iqr_multiplier * iqr)
+        fences[c] = (lower, upper)
+
+        is_outlier = (F.col(c) > upper) | (F.col(c) < lower)
+        outlier_exprs.append(F.sum(F.when(is_outlier, 1).otherwise(0)).alias(f"{c}_outliers"))
+
+    outlier_counts = df_check.agg(*outlier_exprs).first() if outlier_exprs else None
+
+    # BUILD REPORT
+    results_data = []
+    outlier_details = []
+
+    cols_for_report = valid_cols if skip_all_null_cols else all_cols
+
+    for c in cols_for_report:
+        mn, mx = stats_row[f"{c}_min"], stats_row[f"{c}_max"]
+        avg, std = stats_row[f"{c}_mean"], stats_row[f"{c}_std"]
+        q25, median, q75 = stats_row[f"{c}_qs"]
+
+        lower, upper = fences.get(c, (None, None))
+
+        if outlier_counts is not None and f"{c}_outliers" in outlier_counts.asDict():
+            o_count = int(outlier_counts[f"{c}_outliers"])
+        else:
+            o_count = 0
+
+        o_pct = (o_count / total_count * 100) if total_count else 0.0
+        label = c
+
+        # IMPORTANT: use `is not None` so 0 doesn't become None
+        results_data.append({
+            "Feature": label,
+            "NonNull": nn_by_col[c],
+            "Min": round(mn, 2) if mn is not None else None,
+            "Q25": round(q25, 2) if q25 is not None else None,
+            "Median": round(median, 2) if median is not None else None,
+            "Mean": round(avg, 2) if avg is not None else None,
+            "Q75": round(q75, 2) if q75 is not None else None,
+            "Max": round(mx, 2) if mx is not None else None,
+            "Lower Fence": round(lower, 2) if lower is not None else None,
+            "Upper Fence": round(upper, 2) if upper is not None else None
+        })
+
+    pdf_results = pd.DataFrame(results_data)
+    # display(pdf_results)
+    return pdf_results
 
 
 if __name__ == "__main__":

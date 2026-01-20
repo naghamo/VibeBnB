@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="section-title">Preferences</h2>
+<p class="muted">
+  Choose a target country and set what matters to you. Then we’ll retrieve and rank the Top-K.
+</p>
+
+<form method="POST" class="form" action="{{ url_for('results') }}">
+  <input type="hidden" name="selected_listing_id" value="{{ selected_listing_id or '' }}">
+
+  <input type="hidden" name="filter_country" value="{{ filter_country or '' }}">
+  <input type="hidden" name="filter_city" value="{{ filter_city or '' }}">
+  <input type="hidden" name="min_rating" value="{{ '' if min_rating is none else min_rating }}">
+  <input type="hidden" name="max_rating" value="{{ '' if max_rating is none else max_rating }}">
+  <input type="hidden" name="min_price" value="{{ '' if min_price is none else min_price }}">
+  <input type="hidden" name="max_price" value="{{ '' if max_price is none else max_price }}">
+
+  <div class="grid">
+    <div class="field">
+      <label class="label" for="target_country">Search in this country</label>
+      <select class="select" name="target_country" id="target_country">
+        {% for c in countries %}
+          <option value="{{ c }}" {% if (target_country or "") == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field">
+      <label class="label" for="n_candidates">How wide should we search?</label>
+      <select class="select" name="n_candidates" id="n_candidates">
+        {% for val in [25, 50, 100, 200] %}
+          <option value="{{ val }}" {% if (n_candidates or 50) == val %}selected{% endif %}>
+            {{ val }} candidates
+          </option>
+        {% endfor %}
+      </select>
+      <div class="muted small">Bigger = more options, but slower.</div>
+    </div>
+
+    <div class="field">
+      <label class="label" for="k_show">How many results to show?</label>
+      <select class="select" name="k_show" id="k_show">
+        {% for val in [5, 10, 15, 20] %}
+          <option value="{{ val }}" {% if (k_show or 10) == val %}selected{% endif %}>
+            Top {{ val }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="prefs">
+    <div class="prefs-title">Your preferences (0–100)</div>
+    <p class="muted small" style="margin-top:-6px;">Set to 0 if you don’t care about something.</p>
+
+    <div class="prefs-grid">
+      <div class="pref">
+        <div class="pref-head"><span>Value for money</span><span id="priceVal" class="pref-val">25</span></div>
+        <input type="range" min="0" max="100" value="{{ w_price if w_price is not none else 25 }}" name="w_price" id="w_price">
+      </div>
+
+      <div class="pref">
+        <div class="pref-head"><span>Property quality</span><span id="propVal" class="pref-val">25</span></div>
+        <input type="range" min="0" max="100" value="{{ w_property if w_property is not none else 25 }}" name="w_property" id="w_property">
+      </div>
+
+      <div class="pref">
+        <div class="pref-head"><span>Host reliability</span><span id="hostVal" class="pref-val">25</span></div>
+        <input type="range" min="0" max="100" value="{{ w_host if w_host is not none else 25 }}" name="w_host" id="w_host">
+      </div>
+    </div>
+
+    <hr class="divider" style="margin:14px 0;">
+
+    <div class="prefs-title">Trip context (optional)</div>
+    <div class="grid">
+      <div class="field">
+        <label class="label" for="travel_month">Travel month (1–12)</label>
+        <input class="input" type="number" min="1" max="12"
+               value="{{ travel_month if travel_month is not none else 7 }}" name="travel_month" id="travel_month">
+      </div>
+
+      <div class="field">
+        <label class="label" for="temp_pref">Preferred temperature (°C)</label>
+        <input class="input" type="number" step="0.5"
+               value="{{ temp_pref if temp_pref is not none else 22 }}" name="temp_pref" id="temp_pref">
+      </div>
+
+      <div class="field">
+        <label class="label" for="budget_pref">Budget style</label>
+        <select class="select" name="budget_pref" id="budget_pref">
+          <option value="" {% if not budget_pref %}selected{% endif %}>No preference</option>
+          {% for b in budget_choices %}
+            {% if b %}
+              <option value="{{ b }}" {% if budget_pref == b %}selected{% endif %}>{{ b }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="prefs-grid" style="margin-top:12px;">
+      <div class="pref">
+        <div class="pref-head"><span>Weather match importance</span><span id="tempWVal" class="pref-val">0</span></div>
+        <input type="range" min="0" max="100" value="{{ w_temp if w_temp is not none else 0 }}" name="w_temp" id="w_temp">
+      </div>
+
+      <div class="pref">
+        <div class="pref-head"><span>Budget match importance</span><span id="budgetWVal" class="pref-val">0</span></div>
+        <input type="range" min="0" max="100" value="{{ w_budget if w_budget is not none else 0 }}" name="w_budget" id="w_budget">
+      </div>
+    </div>
+
+    {% if env_choices and env_choices|length > 0 %}
+      <hr class="divider" style="margin:14px 0;">
+      <div class="prefs-title">Neighborhood vibe (0–100)</div>
+      <p class="muted small" style="margin-top:-6px;">Only non-zero vibe weights will affect ranking.</p>
+
+      <div class="prefs-grid">
+        {% for c in env_choices %}
+        <div class="pref">
+          <div class="pref-head">
+            <span>{{ c.replace("env_", "").replace("_norm", "").replace("_", " ") | title }}</span>
+            <span id="val_{{ c }}" class="pref-val">0</span>
+          </div>
+          <input type="range" min="0" max="100"
+                 value="{{ env_weights[c] if env_weights and (c in env_weights) else 0 }}"
+                 name="w_{{ c }}" id="w_{{ c }}">
+        </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="actions">
+    <button type="submit" class="btn">Find Similar</button>
+    <a class="btn secondary" href="{{ url_for('filters',
+      filter_country=filter_country or '',
+      filter_city=filter_city or '',
+      min_rating='' if min_rating is none else min_rating,
+      max_rating='' if max_rating is none else max_rating,
+      min_price='' if min_price is none else min_price,
+      max_price='' if max_price is none else max_price
+    ) }}">Back to listings</a>
+  </div>
+</form>
+
+{% if status %}
+  <div class="result" style="margin-top:12px;">
+    <div class="result-title">Status</div>
+    <div class="result-body">{{ status }}</div>
+  </div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function bindRange(rangeId, labelId) {
+    const range = document.getElementById(rangeId);
+    const label = document.getElementById(labelId);
+    if (!range || !label) return;
+    const update = () => label.textContent = range.value;
+    range.addEventListener("input", update);
+    update();
+  }
+
+  bindRange("w_price", "priceVal");
+  bindRange("w_property", "propVal");
+  bindRange("w_host", "hostVal");
+  bindRange("w_temp", "tempWVal");
+  bindRange("w_budget", "budgetWVal");
+
+  {% for c in env_choices %}
+    bindRange("w_{{ c }}", "val_{{ c }}");
+  {% endfor %}
+</script>
+{% endblock %}

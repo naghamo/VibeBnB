@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Intro video overlay -->
+<div id="introOverlay" class="intro-overlay">
+  <video id="introVideo"
+         autoplay
+         muted
+         playsinline
+         class="intro-video">
+    <source src="{{ url_for('static', filename='media/logo_intro.mp4') }}" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
+</div>
+
+<!-- Actual page content (hidden at first) -->
+<div id="infoContent" class="info-content hidden">
+
+  <h2 class="section-title">Welcome to VibeBnB</h2>
+  <p class="muted">
+    VibeBnB helps you find listings with a similar “vibe” across European countries.
+  </p>
+
+  <div class="infobar" style="margin-top:12px;">
+    <div class="infobar-title">What you can do here</div>
+    <div class="infobar-body">
+      <ol class="infobar-list">
+        <li>Filter listings in Europe by <b>country</b>, <b>city</b>, <b>rating</b>, and <b>price</b>.</li>
+        <li>Pick a <b>reference listing</b> you like.</li>
+        <li>Choose a <b>target country</b> and your preferences.</li>
+        <li>Get <b>Top-K</b> similar listings ranked by your taste.</li>
+      </ol>
+      <div class="muted small" style="margin-top:8px;">
+        Offline mode uses a sample (fast). Online mode filters the full dataset in Spark.
+      </div>
+    </div>
+  </div>
+
+  <div class="actions" style="margin-top:14px;">
+    <a class="btn" href="{{ url_for('filters') }}">Start</a>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const overlay = document.getElementById("introOverlay");
+  const video = document.getElementById("introVideo");
+  const content = document.getElementById("infoContent");
+
+  function endIntro() {
+    overlay.classList.add("fade-out");
+    setTimeout(() => {
+      overlay.style.display = "none";
+      content.classList.remove("hidden");
+    }, 600);
+  }
+
+  // End when video finishes
+  if (video) {
+    video.addEventListener("ended", endIntro);
+  }
+
+  // Safety fallback (e.g. autoplay blocked)
+  setTimeout(endIntro, 5000);
+</script>
+{% endblock %}

@@ -1,30 +1,116 @@
 {% extends "base.html" %}
 {% block content %}
 
-<h2 class="section-title">Select a reference listing</h2>
+<!-- =========================
+     Intro / Info Bar
+========================== -->
+<div class="infobar">
+  <div class="infobar-title">How it works</div>
+  <div class="infobar-body">
+    <ol class="infobar-list">
+      <li><b>Choose where your reference stay is</b> (country + city) and optionally set a <b>price</b> and <b>rating</b> range.</li>
+      <li>Pick one listing from the filtered list (this is your <b>reference</b>).</li>
+      <li>Choose a <b>target country</b> to search in, then answer a few simple preference questions.</li>
+      <li>We return the <b>Top-K</b> most similar listings, ordered by your preferences.</li>
+    </ol>
+    <div class="muted small">
+      Tip: Start broad (no ranges), pick a listing, then refine.
+    </div>
+  </div>
+</div>
+
+<!-- =========================
+     Step 1: Filter to find a reference listing
+========================== -->
+<h2 class="section-title">1) Pick your reference listing</h2>
 <p class="muted">
-  Search in the table, click a row to select a listing, then set your preferences and run “Find Similar”.
+  First, filter by where the listing is and (optional) price/rating range. Then choose one listing as your reference.
 </p>
 
-<div class="toolbar">
+<form method="GET" class="form" id="filterForm">
+  <div class="grid">
+    <div class="field">
+      <label class="label" for="filter_country">Reference country</label>
+      <select class="select" name="filter_country" id="filter_country">
+        <option value="">All</option>
+        {% for c in countries %}
+          <option value="{{ c }}" {% if request.args.get('filter_country','') == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field">
+      <label class="label" for="filter_city">Reference city</label>
+      <select class="select" name="filter_city" id="filter_city">
+        <option value="">All</option>
+        {# app.py will later populate city_choices based on chosen country #}
+        {% if city_choices %}
+          {% for city in city_choices %}
+            <option value="{{ city }}" {% if request.args.get('filter_city','') == city %}selected{% endif %}>{{ city }}</option>
+          {% endfor %}
+        {% endif %}
+      </select>
+      <div class="muted small">Choose a country first to get a cleaner city list.</div>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top: 10px;">
+    <div class="field">
+      <label class="label">Rating range</label>
+      <div class="range-row">
+        <input class="input" type="number" step="0.1" min="0" max="5"
+               name="min_rating" id="min_rating"
+               value="{{ request.args.get('min_rating','') }}"
+               placeholder="Min (e.g., 4.2)">
+        <span class="range-sep">to</span>
+        <input class="input" type="number" step="0.1" min="0" max="5"
+               name="max_rating" id="max_rating"
+               value="{{ request.args.get('max_rating','') }}"
+               placeholder="Max (e.g., 5.0)">
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="label">Price range (per night)</label>
+      <div class="range-row">
+        <input class="input" type="number" step="1" min="0"
+               name="min_price" id="min_price"
+               value="{{ request.args.get('min_price','') }}"
+               placeholder="Min (e.g., 60)">
+        <span class="range-sep">to</span>
+        <input class="input" type="number" step="1" min="0"
+               name="max_price" id="max_price"
+               value="{{ request.args.get('max_price','') }}"
+               placeholder="Max (e.g., 200)">
+      </div>
+    </div>
+  </div>
+
+  <div class="actions" style="margin-top: 10px;">
+    <button type="submit" class="btn">Apply filters</button>
+    <a class="btn secondary" href="{{ url_for('index') }}">Reset</a>
+  </div>
+</form>
+
+<div class="toolbar" style="margin-top: 18px;">
   <div class="searchbox">
-    <label class="label" for="searchInput">Search</label>
+    <label class="label" for="searchInput">Search within the filtered list</label>
     <input id="searchInput" class="input" type="text"
-           placeholder="Type to filter listings (title, city, country, id)…">
+           placeholder="Type to filter (title, city, country, type)…">
   </div>
 
   <div class="selectedbox">
-    <div class="label">Selected listing</div>
+    <div class="label">Selected reference listing</div>
     <div id="selectedDisplay" class="selected-pill">None</div>
   </div>
 </div>
 
-<div class="table-wrap">
+<!-- Scrollable listings table -->
+<div class="table-scroll" id="tableScroll">
   <table id="listingsTable" class="table">
     <thead>
       <tr>
-        <th>ID</th>
-        <th>Title</th>
+        <th>Name</th>
         <th>Type</th>
         <th>City</th>
         <th>Country</th>
@@ -35,7 +121,6 @@
     <tbody>
       {% for r in listings %}
       <tr class="row" data-id="{{ r.property_id }}">
-        <td>{{ r.property_id }}</td>
         <td>{{ r.listing_title }}</td>
         <td>{{ r.room_type_text }}</td>
         <td>{{ r.addr_name }}</td>
@@ -50,99 +135,115 @@
 
 <hr class="divider">
 
-<h2 class="section-title">Find similar listings</h2>
+<!-- =========================
+     Step 2: Similarity Search + Preferences
+========================== -->
+<h2 class="section-title">2) Search for similar “vibes”</h2>
+<p class="muted">
+  Pick a target country to search in, then answer the questions below. We’ll rank results using your answers.
+</p>
 
 <form method="POST" class="form">
   <input type="hidden" name="selected_listing_id" id="selectedListingId" value="">
 
   <div class="grid">
     <div class="field">
-      <label class="label" for="target_country">Filter candidates by country</label>
+      <label class="label" for="target_country">Search in this country</label>
       <select class="select" name="target_country" id="target_country">
-        <!-- <option value="">No filter (global)</option> -->
         {% for c in countries %}
-          <option value="{{ c }}">{{ c }}</option>
+          <option value="{{ c }}"
+            {% if submitted and submitted.target_country == c %}selected{% endif %}>
+            {{ c }}
+          </option>
         {% endfor %}
       </select>
     </div>
 
     <div class="field">
-      <label class="label" for="n_candidates">Similarity depth (retrieve N candidates)</label>
+      <label class="label" for="n_candidates">How wide should we search?</label>
       <select class="select" name="n_candidates" id="n_candidates">
         {% for val in [25, 50, 100, 200] %}
-          <option value="{{ val }}" {% if val == 50 %}selected{% endif %}>{{ val }}</option>
+          <option value="{{ val }}"
+            {% if submitted and submitted.n_candidates == val %}selected{% endif %}
+            {% if (not submitted) and val == 50 %}selected{% endif %}>
+            {{ val }} candidates
+          </option>
         {% endfor %}
       </select>
+      <div class="muted small">Bigger = more options, but slower.</div>
     </div>
 
     <div class="field">
-      <label class="label" for="k">Show top k after ranking</label>
-      <select class="select" name="k" id="k">
+      <label class="label" for="k_show">How many results to show?</label>
+      <select class="select" name="k_show" id="k_show">
         {% for val in [5, 10, 15, 20] %}
-          <option value="{{ val }}" {% if val == 10 %}selected{% endif %}>{{ val }}</option>
+          <option value="{{ val }}"
+            {% if submitted and submitted.k_show == val %}selected{% endif %}
+            {% if (not submitted) and val == 10 %}selected{% endif %}>
+            Top {{ val }}
+          </option>
         {% endfor %}
       </select>
     </div>
   </div>
 
   <div class="prefs">
-    <div class="prefs-title">Core Weights (0–100)</div>
+    <div class="prefs-title">Your preferences (0–100)</div>
+    <p class="muted small" style="margin-top: -6px;">
+      Move sliders toward what matters to you. If you don’t care about something, set it to 0.
+    </p>
 
     <div class="prefs-grid">
       <div class="pref">
         <div class="pref-head">
-          <span>Price importance</span>
+          <span>Do you prefer better value for money?</span>
           <span id="priceVal" class="pref-val">25</span>
         </div>
-        <input type="range" min="0" max="100" value="25" name="w_price" id="w_price">
+        <input type="range" min="0" max="100" value="{{ request.form.w_price or 25 }}" name="w_price" id="w_price">
       </div>
 
       <div class="pref">
         <div class="pref-head">
-          <span>Property quality importance</span>
+          <span>Do you care about high property quality?</span>
           <span id="propVal" class="pref-val">25</span>
         </div>
-        <input type="range" min="0" max="100" value="25" name="w_property" id="w_property">
+        <input type="range" min="0" max="100" value="{{ request.form.w_property or 25 }}" name="w_property" id="w_property">
       </div>
 
       <div class="pref">
         <div class="pref-head">
-          <span>Host quality importance</span>
+          <span>Do you care about host reliability?</span>
           <span id="hostVal" class="pref-val">25</span>
         </div>
-        <input type="range" min="0" max="100" value="25" name="w_host" id="w_host">
-      </div>
-
-      <div class="pref">
-        <div class="pref-head">
-          <span>Environment importance (overall)</span>
-          <span class="pref-val muted">Set per category below</span>
-        </div>
-        <div class="muted small">Use the category sliders (Food, Nature, etc.)</div>
+        <input type="range" min="0" max="100" value="{{ request.form.w_host or 25 }}" name="w_host" id="w_host">
       </div>
     </div>
 
     <hr class="divider" style="margin:14px 0;">
 
-    <div class="prefs-title">City Context (optional)</div>
+    <div class="prefs-title">Trip context (optional)</div>
 
     <div class="grid">
       <div class="field">
-        <label class="label" for="travel_month">Travel month (1–12)</label>
-        <input class="input" type="number" min="1" max="12" value="7" name="travel_month" id="travel_month">
+        <label class="label" for="travel_month">When are you traveling? (month 1–12)</label>
+        <input class="input" type="number" min="1" max="12"
+               value="{{ request.form.travel_month or 7 }}" name="travel_month" id="travel_month">
       </div>
 
       <div class="field">
-        <label class="label" for="temp_pref">Preferred temperature (°C)</label>
-        <input class="input" type="number" step="0.5" value="22" name="temp_pref" id="temp_pref">
+        <label class="label" for="temp_pref">What temperature do you like? (°C)</label>
+        <input class="input" type="number" step="0.5"
+               value="{{ request.form.temp_pref or 22 }}" name="temp_pref" id="temp_pref">
       </div>
 
       <div class="field">
-        <label class="label" for="budget_pref">Budget preference</label>
+        <label class="label" for="budget_pref">What budget style are you aiming for?</label>
         <select class="select" name="budget_pref" id="budget_pref">
-          <option value="">No preference</option>
+          <option value="" {% if not request.form.budget_pref %}selected{% endif %}>No preference</option>
           {% for b in budget_choices %}
-            <option value="{{ b }}">{{ b }}</option>
+            {% if b %}
+              <option value="{{ b }}" {% if request.form.budget_pref == b %}selected{% endif %}>{{ b }}</option>
+            {% endif %}
           {% endfor %}
         </select>
       </div>
@@ -151,24 +252,27 @@
     <div class="prefs-grid" style="margin-top:12px;">
       <div class="pref">
         <div class="pref-head">
-          <span>Temperature weight</span>
+          <span>How important is matching your preferred weather?</span>
           <span id="tempWVal" class="pref-val">0</span>
         </div>
-        <input type="range" min="0" max="100" value="0" name="w_temp" id="w_temp">
+        <input type="range" min="0" max="100" value="{{ request.form.w_temp or 0 }}" name="w_temp" id="w_temp">
       </div>
 
       <div class="pref">
         <div class="pref-head">
-          <span>Budget weight</span>
+          <span>How important is matching your budget level?</span>
           <span id="budgetWVal" class="pref-val">0</span>
         </div>
-        <input type="range" min="0" max="100" value="0" name="w_budget" id="w_budget">
+        <input type="range" min="0" max="100" value="{{ request.form.w_budget or 0 }}" name="w_budget" id="w_budget">
       </div>
     </div>
 
     {% if env_choices and env_choices|length > 0 %}
     <hr class="divider" style="margin:14px 0;">
-    <div class="prefs-title">Environment Category Weights (0–100)</div>
+    <div class="prefs-title">Neighborhood vibe (0–100)</div>
+    <p class="muted small" style="margin-top:-6px;">
+      Which surroundings matter to you? (Only the non-zero ones will affect ranking.)
+    </p>
 
     <div class="prefs-grid">
       {% for c in env_choices %}
@@ -177,65 +281,57 @@
           <span>{{ c.replace("env_", "").replace("_norm", "").replace("_", " ") | title }}</span>
           <span id="val_{{ c }}" class="pref-val">0</span>
         </div>
-        <input type="range" min="0" max="100" value="0" name="w_{{ c }}" id="w_{{ c }}">
+        <input type="range" min="0" max="100"
+               value="{{ request.form['w_' ~ c] or 0 }}"
+               name="w_{{ c }}" id="w_{{ c }}">
       </div>
       {% endfor %}
     </div>
     {% endif %}
-
-    <p class="muted small" style="margin-top:10px;">
-      All positive weights are normalized to sum to 1 inside the ranking function.
-    </p>
   </div>
 
   <div class="actions">
     <button type="submit" class="btn">Find Similar</button>
-    <button type="button" class="btn secondary" id="clearSelection">Clear selection</button>
+    <button type="button" class="btn secondary" id="clearSelection">Clear reference</button>
   </div>
 </form>
 
-{% if result %}
-  <div class="result">
-    <div class="result-title">Status</div>
-    <div class="result-body">{{ result }}</div>
-  </div>
-{% endif %}
-
-{% if target_row %}
-  <div class="result" style="margin-top:12px;">
-    <div class="result-title">Target listing</div>
-    <div class="result-body">
-ID: {{ target_row.property_id }} | {{ target_row.addr_cc }} | {{ target_row.addr_name }}
-Title: {{ target_row.listing_title }}
-Type: {{ target_row.room_type_text }} | Price: {{ target_row.price_per_night }} | Rating: {{ target_row.ratings }}
-    </div>
-  </div>
-{% endif %}
-
+<!-- =========================
+     Results (only show when we have results_rows)
+========================== -->
 {% if results_rows %}
-  <h2 class="section-title" style="margin-top:16px;">Top results</h2>
+  <hr class="divider" style="margin-top:18px;">
+
+  <h2 class="section-title">Results</h2>
+
+  <div class="result" style="margin-top:10px;">
+    <div class="result-title">Your selection</div>
+    <div class="result-body" id="selectionSummary"></div>
+  </div>
+
+  <h2 class="section-title" style="margin-top:16px;">Top matches</h2>
   <div class="table-wrap">
     <table class="table">
       <thead>
         <tr>
-          <th>ID</th>
+          <th>#</th>
+          <th>Name</th>
           <th>Country</th>
           <th>City</th>
-          <th>Title</th>
           <th>Type</th>
           <th>Price</th>
           <th>Rating</th>
-          <th>l2_dist</th>
-          <th>final_score</th>
+          <th>Similarity</th>
+          <th>Final score</th>
         </tr>
       </thead>
       <tbody>
         {% for r in results_rows %}
         <tr>
-          <td>{{ r.property_id }}</td>
+          <td>{{ loop.index }}</td>
+          <td>{{ r.listing_title }}</td>
           <td>{{ r.addr_cc }}</td>
           <td>{{ r.addr_name }}</td>
-          <td>{{ r.listing_title }}</td>
           <td>{{ r.room_type_text }}</td>
           <td>{{ r.price_per_night }}</td>
           <td>{{ r.ratings }}</td>
@@ -246,26 +342,34 @@ Type: {{ target_row.room_type_text }} | Price: {{ target_row.price_per_night }} 
       </tbody>
     </table>
   </div>
+
+{% elif result %}
+  <div class="result" style="margin-top:12px;">
+    <div class="result-title">Status</div>
+    <div class="result-body">{{ result }}</div>
+  </div>
 {% endif %}
 
 {% endblock %}
 
 {% block scripts %}
 <script>
-  // --- Table search ---
+  // --- Search within filtered list ---
   const searchInput = document.getElementById("searchInput");
   const table = document.getElementById("listingsTable");
-  const rows = Array.from(table.querySelectorAll("tbody tr"));
+  const rows = table ? Array.from(table.querySelectorAll("tbody tr")) : [];
 
-  searchInput.addEventListener("input", () => {
-    const q = searchInput.value.toLowerCase();
-    rows.forEach(r => {
-      const text = r.innerText.toLowerCase();
-      r.style.display = text.includes(q) ? "" : "none";
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      const q = (searchInput.value || "").toLowerCase();
+      rows.forEach(r => {
+        const text = r.innerText.toLowerCase();
+        r.style.display = text.includes(q) ? "" : "none";
+      });
     });
-  });
+  }
 
-  // --- Row selection ---
+  // --- Row selection (hidden ID only) ---
   const selectedDisplay = document.getElementById("selectedDisplay");
   const selectedListingId = document.getElementById("selectedListingId");
   let selectedRow = null;
@@ -277,17 +381,26 @@ Type: {{ target_row.room_type_text }} | Price: {{ target_row.price_per_night }} 
       r.classList.add("selected");
       const id = r.getAttribute("data-id");
       selectedListingId.value = id;
-      selectedDisplay.textContent = "Listing ID: " + id;
+
+      // Show friendly text (not the raw ID)
+      const title = r.children[0]?.innerText || "Selected listing";
+      const city = r.children[2]?.innerText || "";
+      const cc = r.children[3]?.innerText || "";
+      selectedDisplay.textContent = `${title} — ${city} (${cc})`;
     });
   });
 
-  document.getElementById("clearSelection").addEventListener("click", () => {
-    if (selectedRow) selectedRow.classList.remove("selected");
-    selectedRow = null;
-    selectedListingId.value = "";
-    selectedDisplay.textContent = "None";
-  });
+  const clearBtn = document.getElementById("clearSelection");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      if (selectedRow) selectedRow.classList.remove("selected");
+      selectedRow = null;
+      selectedListingId.value = "";
+      selectedDisplay.textContent = "None";
+    });
+  }
 
+  // --- Slider labels ---
   function bindRange(rangeId, labelId) {
     const range = document.getElementById(rangeId);
     const label = document.getElementById(labelId);
@@ -302,10 +415,54 @@ Type: {{ target_row.room_type_text }} | Price: {{ target_row.price_per_night }} 
   bindRange("w_host", "hostVal");
   bindRange("w_temp", "tempWVal");
   bindRange("w_budget", "budgetWVal");
-
-  // env sliders
   {% for c in env_choices %}
     bindRange("w_{{ c }}", "val_{{ c }}");
   {% endfor %}
+
+  // --- Results summary block (simple, user-friendly) ---
+  const summary = document.getElementById("selectionSummary");
+  if (summary) {
+    const read = (id) => document.getElementById(id)?.value ?? "";
+    const readText = (id) => document.getElementById(id)?.selectedOptions?.[0]?.textContent ?? "";
+
+    const refCountry = document.getElementById("filter_country")?.value || "";
+    const refCity = document.getElementById("filter_city")?.value || "";
+    const minR = read("min_rating"), maxR = read("max_rating");
+    const minP = read("min_price"), maxP = read("max_price");
+
+    const targetCountry = readText("target_country");
+    const nCand = readText("n_candidates");
+    const kShow = readText("k_show");
+
+    // preferences
+    const prefs = {
+      "Value for money": read("w_price"),
+      "Property quality": read("w_property"),
+      "Host reliability": read("w_host"),
+      "Weather match": read("w_temp"),
+      "Budget match": read("w_budget"),
+    };
+
+    const nonZeroEnv = [];
+    const envKeys = [{% for c in env_choices %}"{{ c }}",{% endfor %}];
+    envKeys.forEach(k => {
+      const v = document.getElementById("w_" + k)?.value || "0";
+      const num = parseFloat(v);
+      if (!isNaN(num) && num > 0) {
+        const label = k.replace("env_","").replace("_norm","").replaceAll("_"," ");
+        nonZeroEnv.push(`${label}: ${v}`);
+      }
+    });
+
+    summary.innerHTML = `
+<b>Reference filters:</b> ${refCity ? refCity + ", " : ""}${refCountry || "All countries"}
+${(minR || maxR) ? `<br><b>Rating range:</b> ${minR || "–"} to ${maxR || "–"}` : ""}
+${(minP || maxP) ? `<br><b>Price range:</b> ${minP || "–"} to ${maxP || "–"}` : ""}
+<br><b>Search in:</b> ${targetCountry}
+<br><b>Search depth:</b> ${nCand}, <b>Show:</b> ${kShow}
+<br><b>Your preferences:</b> ${Object.entries(prefs).map(([k,v]) => `${k}=${v}`).join(" | ")}
+${nonZeroEnv.length ? `<br><b>Neighborhood vibe:</b> ${nonZeroEnv.join(" • ")}` : ""}
+    `.trim();
+  }
 </script>
 {% endblock %}

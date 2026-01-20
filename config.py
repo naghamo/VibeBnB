@@ -6,6 +6,11 @@ DELTA_LAT = R_M / 111000.0
 EMBEDDED_PATH = "dbfs:/vibebnb/data/europe_countries_embedded"          
 LSH_MODEL_PATH = "dbfs:/vibebnb/models/lsh_global"
 FULL_PATH = "dbfs:/vibebnb/data/europe_countries_scored.parquet"
+OCQS_PATH = "dbfs:/vibebnb/data/query_suite.parquet"
+MCQS_PATH = "dbfs:/vibebnb/data/query_suite_multiple_countries.parquet"
+MCQS_DATA_PATH = "dbfs:/vibebnb/data/query_suite_multiple_countries_data.parquet"
+OCQS_RESULTS_PATH = "dbfs:/vibebnb/data/suite_retrieval_results.parquet"
+MCQS_RESULTS_PATH = "dbfs:/vibebnb/data/suite_multiple_countries_retrieval_results.parquet"
 
 continents = {
     "africa": [
@@ -60,9 +65,7 @@ SCORED_NUM_COLS = [
     "price_score",
     "property_quality",
     "host_quality",
-    "n_beds",
-    "n_baths",
-    "n_bedrooms", 
+    
 ]
 ENV_GROUPS =["Sightseeing",
     "Culture",

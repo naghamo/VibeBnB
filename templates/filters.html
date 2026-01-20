@@ -1,0 +1,370 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="section-title">Filters & Listings</h2>
+<p class="muted">
+  Choose a country and city, adjust ranges, then click <b>Filter</b>.
+  After results load, select a listing and continue.
+</p>
+
+<form method="GET" class="form" id="filterForm" action="{{ url_for('filters') }}">
+  <div class="grid">
+    <div class="field">
+      <label class="label" for="filter_country">Reference country <span class="muted small">(required)</span></label>
+      <select class="select" name="filter_country" id="filter_country" required>
+        <option value="" disabled {% if not (filter_country or request.args.get('filter_country','')) %}selected{% endif %}>
+          Select a country…
+        </option>
+        {% for c in countries %}
+          <option value="{{ c }}" {% if (filter_country or request.args.get('filter_country','')) == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field">
+      <label class="label" for="filter_city">Reference city <span class="muted small">(required)</span></label>
+      <select class="select" name="filter_city" id="filter_city" required>
+        <option value="" disabled {% if not (filter_city or request.args.get('filter_city','')) %}selected{% endif %}>
+          Select a city…
+        </option>
+        {% if city_choices %}
+          {% for city in city_choices %}
+            <option value="{{ city }}" {% if (filter_city or request.args.get('filter_city','')) == city %}selected{% endif %}>{{ city }}</option>
+          {% endfor %}
+        {% endif %}
+      </select>
+    </div>
+  </div>
+
+  <!-- Double sliders -->
+  <div class="grid" style="margin-top: 10px;">
+
+    <!-- Rating slider -->
+    <div class="field">
+      <label class="label">Rating range</label>
+
+      {% set rmin = (min_rating if min_rating is not none else (request.args.get('min_rating','')|float if request.args.get('min_rating','') else 0.0)) %}
+      {% set rmax = (max_rating if max_rating is not none else (request.args.get('max_rating','')|float if request.args.get('max_rating','') else 5.0)) %}
+
+      <div class="range-card">
+        <div class="range-meta">
+          <span class="muted small">Min: <b id="ratingMinLabel">{{ "%.1f"|format(rmin) }}</b></span>
+          <span class="muted small">Max: <b id="ratingMaxLabel">{{ "%.1f"|format(rmax) }}</b></span>
+        </div>
+
+        <div class="dual-range">
+          <div class="track"></div>
+          <div class="range-fill" id="ratingFill"></div>
+
+          <!-- IMPORTANT: min ABOVE max by default -->
+          <input type="range" id="ratingMax" min="0" max="5" step="0.1" value="{{ rmax }}" aria-label="rating max">
+          <input type="range" id="ratingMin" min="0" max="5" step="0.1" value="{{ rmin }}" aria-label="rating min">
+        </div>
+
+        <input type="hidden" name="min_rating" id="min_rating" value="{{ rmin }}">
+        <input type="hidden" name="max_rating" id="max_rating" value="{{ rmax }}">
+      </div>
+    </div>
+
+    <!-- Price slider -->
+    <div class="field">
+      <label class="label">Price range (per night)</label>
+
+      {% set pmax_ui = 10000 %}
+      {% set pmin = (min_price if min_price is not none else (request.args.get('min_price','')|int if request.args.get('min_price','') else 0)) %}
+      {% set pmax = (max_price if max_price is not none else (request.args.get('max_price','')|int if request.args.get('max_price','') else pmax_ui)) %}
+
+      <div class="range-card">
+        <div class="range-meta">
+          <span class="muted small">Min: <b id="priceMinLabel">{{ pmin }}</b></span>
+          <span class="muted small">Max: <b id="priceMaxLabel">{{ pmax }}</b></span>
+        </div>
+
+        <div class="dual-range">
+          <div class="track"></div>
+          <div class="range-fill" id="priceFill"></div>
+
+          <!-- IMPORTANT: max first, min second (min on top) -->
+          <input type="range" id="priceMax" min="0" max="{{ pmax_ui }}" step="1" value="{{ pmax }}" aria-label="price max">
+          <input type="range" id="priceMin" min="0" max="{{ pmax_ui }}" step="1" value="{{ pmin }}" aria-label="price min">
+        </div>
+
+        <input type="hidden" name="min_price" id="min_price" value="{{ pmin }}">
+        <input type="hidden" name="max_price" id="max_price" value="{{ pmax }}">
+      </div>
+    </div>
+
+  </div>
+
+  <div class="actions" style="margin-top: 12px;">
+    <button type="submit" class="btn" id="filterBtn">Filter</button>
+    <a class="btn secondary" href="{{ url_for('filters') }}">Reset</a>
+    <a class="btn secondary" href="{{ url_for('info') }}">Back</a>
+  </div>
+
+  <div class="muted small" id="requiredHint" style="margin-top:10px; display:none;">
+    Please select <b>both</b> a country and a city to filter.
+  </div>
+</form>
+
+{% if status %}
+  <div class="result" style="margin-top:12px;">
+    <div class="result-title">Status</div>
+    <div class="result-body">{{ status }}</div>
+  </div>
+{% endif %}
+
+<hr class="divider">
+
+<div class="toolbar">
+  <div class="searchbox">
+    <label class="label" for="searchInput">Search within results</label>
+    <input id="searchInput" class="input" type="text"
+           placeholder="Type to filter (title, city, country, type)…">
+  </div>
+
+  <div class="selectedbox">
+    <div class="label">Selected reference listing</div>
+    <div id="selectedDisplay" class="selected-pill">None</div>
+  </div>
+</div>
+
+<div class="table-scroll" id="tableScroll">
+  <table id="listingsTable" class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>City</th>
+        <th>Country</th>
+        <th>Price</th>
+        <th>Rating</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in listings %}
+      <tr class="row" data-id="{{ r.property_id }}">
+        <td>{{ r.listing_title }}</td>
+        <td>{{ r.room_type_text }}</td>
+        <td>{{ r.addr_name }}</td>
+        <td>{{ r.addr_cc }}</td>
+        <td>{{ r.price_per_night }}</td>
+        <td>{{ r.ratings }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<form method="POST" class="form" style="margin-top:14px;" action="{{ url_for('preferences') }}" id="continueForm">
+  <input type="hidden" name="selected_listing_id" id="selectedListingId" value="">
+
+  <!-- carry filters forward -->
+  <input type="hidden" name="filter_country" value="{{ filter_country or '' }}">
+  <input type="hidden" name="filter_city" value="{{ filter_city or '' }}">
+  <input type="hidden" name="min_rating" id="post_min_rating" value="{{ '' if min_rating is none else min_rating }}">
+  <input type="hidden" name="max_rating" id="post_max_rating" value="{{ '' if max_rating is none else max_rating }}">
+  <input type="hidden" name="min_price" id="post_min_price" value="{{ '' if min_price is none else min_price }}">
+  <input type="hidden" name="max_price" id="post_max_price" value="{{ '' if max_price is none else max_price }}">
+
+  <div class="actions">
+    <button type="submit" class="btn" id="continueBtn" disabled>Continue to preferences</button>
+    <button type="button" class="btn secondary" id="clearSelection">Clear selection</button>
+  </div>
+
+  <div class="muted small" id="selectHint" style="margin-top:10px; display:none;">
+    Please select a listing before continuing.
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // -----------------------------
+  // Require country + city before Filter
+  // -----------------------------
+  const countrySel = document.getElementById("filter_country");
+  const citySel = document.getElementById("filter_city");
+  const filterBtn = document.getElementById("filterBtn");
+  const requiredHint = document.getElementById("requiredHint");
+  const filterForm = document.getElementById("filterForm");
+
+  function validateRequired() {
+    const ok = !!(countrySel && countrySel.value) && !!(citySel && citySel.value);
+    if (filterBtn) filterBtn.disabled = !ok;
+    if (requiredHint) requiredHint.style.display = ok ? "none" : "block";
+    return ok;
+  }
+  if (countrySel) countrySel.addEventListener("change", validateRequired);
+  if (citySel) citySel.addEventListener("change", validateRequired);
+  if (filterForm) filterForm.addEventListener("submit", (e) => { if (!validateRequired()) e.preventDefault(); });
+  validateRequired();
+
+  // -----------------------------
+  // Dual slider (FIXED min thumb)
+  // -----------------------------
+  function setupDual(minEl, maxEl, fillEl, outMin, outMax, minLabel, maxLabel, minGap, fmt) {
+    if (!minEl || !maxEl) return;
+
+    // values + fill
+    function updateFill() {
+      const mn = parseFloat(minEl.min);
+      const mx = parseFloat(minEl.max);
+      const a = parseFloat(minEl.value);
+      const b = parseFloat(maxEl.value);
+
+      const left = ((a - mn) / (mx - mn)) * 100;
+      const right = ((b - mn) / (mx - mn)) * 100;
+      fillEl.style.left = left + "%";
+      fillEl.style.width = (right - left) + "%";
+    }
+
+    // z-index swap so you can always grab min
+    function syncZ() {
+      const a = parseFloat(minEl.value);
+      const b = parseFloat(maxEl.value);
+      // when thumbs are close, bring the one you need to top
+      if (a >= b - minGap) {
+        // let max be clickable when overlapping
+        maxEl.style.zIndex = 6;
+        minEl.style.zIndex = 5;
+      } else {
+        // otherwise keep min on top (so it can be grabbed)
+        minEl.style.zIndex = 6;
+        maxEl.style.zIndex = 5;
+      }
+    }
+
+    function clamp() {
+      let a = parseFloat(minEl.value);
+      let b = parseFloat(maxEl.value);
+      if (a > b - minGap) { a = b - minGap; minEl.value = a; }
+      if (b < a + minGap) { b = a + minGap; maxEl.value = b; }
+      return [a,b];
+    }
+
+    function render() {
+      const [a,b] = clamp();
+      if (outMin) outMin.value = a;
+      if (outMax) outMax.value = b;
+      if (minLabel) minLabel.textContent = fmt(a);
+      if (maxLabel) maxLabel.textContent = fmt(b);
+
+      // keep POST hidden inputs synced
+      const pm = document.getElementById("post_min_rating");
+      const px = document.getElementById("post_max_rating");
+      const pminp = document.getElementById("post_min_price");
+      const pmaxp = document.getElementById("post_max_price");
+      if (outMin && outMin.id === "min_rating" && pm) pm.value = a;
+      if (outMax && outMax.id === "max_rating" && px) px.value = b;
+      if (outMin && outMin.id === "min_price" && pminp) pminp.value = a;
+      if (outMax && outMax.id === "max_price" && pmaxp) pmaxp.value = b;
+
+      syncZ();
+      updateFill();
+    }
+
+    // important: both inputs must listen
+    minEl.addEventListener("input", render);
+    maxEl.addEventListener("input", render);
+
+    // ensure thumb you touch is on top
+    minEl.addEventListener("pointerdown", () => { minEl.style.zIndex = 7; });
+    maxEl.addEventListener("pointerdown", () => { maxEl.style.zIndex = 7; });
+
+    render();
+  }
+
+  setupDual(
+    document.getElementById("ratingMin"),
+    document.getElementById("ratingMax"),
+    document.getElementById("ratingFill"),
+    document.getElementById("min_rating"),
+    document.getElementById("max_rating"),
+    document.getElementById("ratingMinLabel"),
+    document.getElementById("ratingMaxLabel"),
+    0.1,
+    (v)=>Number(v).toFixed(1)
+  );
+
+  setupDual(
+    document.getElementById("priceMin"),
+    document.getElementById("priceMax"),
+    document.getElementById("priceFill"),
+    document.getElementById("min_price"),
+    document.getElementById("max_price"),
+    document.getElementById("priceMinLabel"),
+    document.getElementById("priceMaxLabel"),
+    1,
+    (v)=>String(parseInt(v,10))
+  );
+
+  // -----------------------------
+  // Search within list
+  // -----------------------------
+  const searchInput = document.getElementById("searchInput");
+  const table = document.getElementById("listingsTable");
+  const rows = table ? Array.from(table.querySelectorAll("tbody tr")) : [];
+
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      const q = (searchInput.value || "").toLowerCase();
+      rows.forEach(r => {
+        const text = r.innerText.toLowerCase();
+        r.style.display = text.includes(q) ? "" : "none";
+      });
+    });
+  }
+
+  // -----------------------------
+  // Row selection + require before Continue
+  // -----------------------------
+  const selectedDisplay = document.getElementById("selectedDisplay");
+  const selectedListingId = document.getElementById("selectedListingId");
+  const continueBtn = document.getElementById("continueBtn");
+  const selectHint = document.getElementById("selectHint");
+  let selectedRow = null;
+
+  function validateListingSelected() {
+    const ok = !!(selectedListingId && selectedListingId.value);
+    if (continueBtn) continueBtn.disabled = !ok;
+    if (selectHint) selectHint.style.display = ok ? "none" : "block";
+    return ok;
+  }
+
+  rows.forEach(r => {
+    r.addEventListener("click", () => {
+      if (selectedRow) selectedRow.classList.remove("selected");
+      selectedRow = r;
+      r.classList.add("selected");
+
+      selectedListingId.value = r.getAttribute("data-id") || "";
+
+      const title = r.children[0]?.innerText || "Selected listing";
+      const city = r.children[2]?.innerText || "";
+      const cc = r.children[3]?.innerText || "";
+      selectedDisplay.textContent = `${title} — ${city} (${cc})`;
+
+      validateListingSelected();
+    });
+  });
+
+  const clearBtn = document.getElementById("clearSelection");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      if (selectedRow) selectedRow.classList.remove("selected");
+      selectedRow = null;
+      selectedListingId.value = "";
+      selectedDisplay.textContent = "None";
+      validateListingSelected();
+    });
+  }
+
+  validateListingSelected();
+</script>
+
+<style>
+  
+</style>
+{% endblock %}

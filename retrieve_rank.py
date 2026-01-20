@@ -2,6 +2,9 @@
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 from pyspark.ml.feature import BucketedRandomProjectionLSH
+from pyspark.ml.linalg import Vectors, DenseVector
+import numpy as np
+from pyspark.ml.functions import vector_to_array
 
 def retrieve(target_id, country, df, lsh_model, n=50):
     """ANN retrieval inside one country using precomputed features_norm."""
@@ -59,20 +62,50 @@ def order(
             if wv and norm_col in work.columns: terms.append(F.coalesce(F.col(norm_col), F.lit(0.0)) * F.lit(wv))
 
     # temperature component from cities_scores(): uses temp_avg_m01..temp_avg_m12
-    if temp_w and temp_pref is not None and travel_month is not None:
+    if temp_w and (temp_pref is not None) and (travel_month is not None):
         m = int(travel_month)
         if 1 <= m <= 12:
             temp_col = f"temp_avg_m{m:02d}"
             if temp_col in work.columns:
-                work = work.withColumn("temp_score_raw", F.greatest(F.lit(0.0), F.lit(1.0) - (F.abs(F.col(temp_col) - F.lit(float(temp_pref))) / F.lit(25.0))))
+                work = work.withColumn(
+                    "temp_score_raw",
+                    F.when(
+                        F.col(temp_col).isNull(),
+                        F.lit(0.0)
+                    ).otherwise(
+                        F.greatest(
+                            F.lit(0.0),
+                            F.lit(1.0) - (F.abs(F.col(temp_col) - F.lit(float(temp_pref))) / F.lit(25.0))
+                        )
+                    )
+                )
                 terms.append(F.col("temp_score_raw") * F.lit(temp_w))
 
+
     # budget component: prefer the score already computed in cities_scores() if present
-    if budget_w and budget_pref is not None:
-        rank_map = F.create_map(F.lit("Budget"), F.lit(1), F.lit("Mid-range"), F.lit(2), F.lit("Luxury"), F.lit(3))
-        work = work.withColumn("budget_rank_i", rank_map.getItem(F.col("budget_level"))).withColumn("budget_pref_i", rank_map.getItem(F.lit(budget_pref)))
-        work = work.withColumn("budget_score_raw_user", F.when(F.col("budget_rank_i").isNull() | F.col("budget_pref_i").isNull(), F.lit(0.0)).otherwise(F.greatest(F.lit(0.0), F.lit(1.0) - (F.abs(F.col("budget_rank_i") - F.col("budget_pref_i")) / F.lit(2.0)))))
+    if budget_w and (budget_pref is not None):
+        rank_map = F.create_map(
+            F.lit("Budget"), F.lit(1),
+            F.lit("Mid-range"), F.lit(2),
+            F.lit("Luxury"), F.lit(3),
+        )
+        work = work.withColumn("budget_rank_i", rank_map.getItem(F.col("budget_level")))
+        work = work.withColumn("budget_pref_i", rank_map.getItem(F.lit(budget_pref)))
+        work = work.withColumn(
+            "budget_score_raw_user",
+            F.when(
+                F.col("budget_rank_i").isNull() | F.col("budget_pref_i").isNull(),
+                F.lit(0.0)
+            ).otherwise(
+                F.greatest(
+                    F.lit(0.0),
+                    F.lit(1.0) - (F.abs(F.col("budget_rank_i") - F.col("budget_pref_i")) / F.lit(2.0))
+                )
+            )
+        )
+
         terms.append(F.col("budget_score_raw_user") * F.lit(budget_w))
+
 
     work = work.withColumn(score_col, F.lit(0.0)) if not terms else work.withColumn(score_col, sum(terms))
     return work.orderBy(F.col(score_col).desc()).limit(int(k))

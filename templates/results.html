@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="section-title">Results</h2>
+
+{% if result %}
+  <div class="result" style="margin-top:10px;">
+    <div class="result-title">Status</div>
+    <div class="result-body">{{ result }}</div>
+  </div>
+{% endif %}
+
+{% if results_rows %}
+  <hr class="divider" style="margin-top:18px;">
+
+  <h2 class="section-title">Top matches</h2>
+
+  <div class="table-scroll" style="margin-top:12px;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Country</th>
+          <th>City</th>
+          <th>Type</th>
+          <th>Price</th>
+          <th>Rating</th>
+          <th>Similarity</th>
+          <th>Final score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in results_rows %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ r.listing_title }}</td>
+          <td>{{ r.addr_cc }}</td>
+          <td>{{ r.addr_name }}</td>
+          <td>{{ r.room_type_text }}</td>
+          <td>{{ r.price_per_night }}</td>
+          <td>{{ r.ratings }}</td>
+          <td>{{ "%.4f"|format(r.l2_dist) if r.l2_dist is not none else "" }}</td>
+          <td>{{ "%.4f"|format(r.final_score) if r.final_score is not none else "" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+<div class="actions" style="margin-top:14px;">
+  <a class="btn secondary" href="{{ url_for('filters') }}">New search</a>
+</div>
+
+{% endblock %}

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="section-title">2) Choose a reference listing</h2>
+<p class="muted">
+  These are the listings matching your filters. Click a row to select one as the reference.
+</p>
+
+<!-- Keep filters visible (optional) -->
+<div class="infobar" style="margin-bottom:12px;">
+  <div class="infobar-title">Current filters</div>
+  <div class="infobar-body muted small">
+    Country: <b>{{ filter_country or "All" }}</b> |
+    City: <b>{{ filter_city or "All" }}</b> |
+    Rating: <b>{{ min_rating if min_rating is not none else "–" }}</b> to <b>{{ max_rating if max_rating is not none else "–" }}</b> |
+    Price: <b>{{ min_price if min_price is not none else "–" }}</b> to <b>{{ max_price if max_price is not none else "–" }}</b>
+  </div>
+</div>
+
+<div class="toolbar">
+  <div class="searchbox">
+    <label class="label" for="searchInput">Search within this list</label>
+    <input id="searchInput" class="input" type="text"
+           placeholder="Type to filter (title, city, country, type)…">
+  </div>
+
+  <div class="selectedbox">
+    <div class="label">Selected reference listing</div>
+    <div id="selectedDisplay" class="selected-pill">None</div>
+  </div>
+</div>
+
+<div class="table-scroll" id="tableScroll">
+  <table id="listingsTable" class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>City</th>
+        <th>Country</th>
+        <th>Price</th>
+        <th>Rating</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in listings %}
+      <tr class="row" data-id="{{ r.property_id }}">
+        <td>{{ r.listing_title }}</td>
+        <td>{{ r.room_type_text }}</td>
+        <td>{{ r.addr_name }}</td>
+        <td>{{ r.addr_cc }}</td>
+        <td>{{ r.price_per_night }}</td>
+        <td>{{ r.ratings }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<form method="POST" class="form" style="margin-top:14px;" action="{{ url_for('preferences') }}">
+  <input type="hidden" name="selected_listing_id" id="selectedListingId" value="">
+
+  <!-- carry filters forward (so preferences/results can show a summary or enable Back) -->
+  <input type="hidden" name="filter_country" value="{{ filter_country or '' }}">
+  <input type="hidden" name="filter_city" value="{{ filter_city or '' }}">
+  <input type="hidden" name="min_rating" value="{{ '' if min_rating is none else min_rating }}">
+  <input type="hidden" name="max_rating" value="{{ '' if max_rating is none else max_rating }}">
+  <input type="hidden" name="min_price" value="{{ '' if min_price is none else min_price }}">
+  <input type="hidden" name="max_price" value="{{ '' if max_price is none else max_price }}">
+
+  <div class="actions">
+    <button type="submit" class="btn">Continue to preferences</button>
+    <a class="btn secondary" href="{{ url_for('filters',
+      filter_country=filter_country or '',
+      filter_city=filter_city or '',
+      min_rating='' if min_rating is none else min_rating,
+      max_rating='' if max_rating is none else max_rating,
+      min_price='' if min_price is none else min_price,
+      max_price='' if max_price is none else max_price
+    ) }}">Back to filters</a>
+    <button type="button" class="btn secondary" id="clearSelection">Clear selection</button>
+  </div>
+</form>
+
+{% if status %}
+  <div class="result" style="margin-top:12px;">
+    <div class="result-title">Status</div>
+    <div class="result-body">{{ status }}</div>
+  </div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // --- Search within list ---
+  const searchInput = document.getElementById("searchInput");
+  const table = document.getElementById("listingsTable");
+  const rows = table ? Array.from(table.querySelectorAll("tbody tr")) : [];
+
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      const q = (searchInput.value || "").toLowerCase();
+      rows.forEach(r => {
+        const text = r.innerText.toLowerCase();
+        r.style.display = text.includes(q) ? "" : "none";
+      });
+    });
+  }
+
+  // --- Row selection ---
+  const selectedDisplay = document.getElementById("selectedDisplay");
+  const selectedListingId = document.getElementById("selectedListingId");
+  let selectedRow = null;
+
+  rows.forEach(r => {
+    r.addEventListener("click", () => {
+      if (selectedRow) selectedRow.classList.remove("selected");
+      selectedRow = r;
+      r.classList.add("selected");
+
+      const id = r.getAttribute("data-id");
+      selectedListingId.value = id;
+
+      const title = r.children[0]?.innerText || "Selected listing";
+      const city = r.children[2]?.innerText || "";
+      const cc = r.children[3]?.innerText || "";
+      selectedDisplay.textContent = `${title} — ${city} (${cc})`;
+    });
+  });
+
+  const clearBtn = document.getElementById("clearSelection");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      if (selectedRow) selectedRow.classList.remove("selected");
+      selectedRow = null;
+      selectedListingId.value = "";
+      selectedDisplay.textContent = "None";
+    });
+  }
+</script>
+{% endblock %}

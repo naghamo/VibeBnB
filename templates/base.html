@@ -15,7 +15,7 @@
   <div class="wrap">
     <div class="topbar">
       <div class="brand">
-        <!-- ✅ Put your logo file in: static/img/logo.png (or change the path) -->
+      
         <img class="logo-img" src="{{ url_for('static', filename='logo.png') }}" alt="VibeBnB logo">
 
         <div>
@@ -24,10 +24,10 @@
         </div>
       </div>
 
-      <div class="badge">
+      <!-- <div class="badge">
         Mode: <b>{{ mode or "unknown" }}</b>
         {% if mode_reason %} · <span class="muted">{{ mode_reason }}</span>{% endif %}
-      </div>
+      </div> -->
     </div>
 
     <div class="card">

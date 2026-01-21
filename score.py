@@ -171,6 +171,7 @@ def scoring_all(df: DataFrame) -> DataFrame:
 
     return df
 
+
 # Main job
 if __name__ == "__main__":
     spark = SparkSession.builder.getOrCreate()

@@ -1,6 +1,3 @@
-
-
-
 # app.py
 import os
 import time
@@ -13,7 +10,7 @@ from flask import Flask, render_template, request
 app = Flask("vibebnb_app")
 
 # ----------------------------
-# Europe country codes
+# Europe country codes (for FILTERING)
 # ----------------------------
 EUROPE_CC = {
     "AD","AL","AM","AT","AX","AZ","BA","BE","BG","BY","CH","CY","CZ","DE","DK","DZ","EE","ES",
@@ -23,28 +20,36 @@ EUROPE_CC = {
 }
 
 # ----------------------------
-# Mode selection
+# Target countries (ONLY these 5)
 # ----------------------------
-VIBEBNB_MODE = (os.environ.get("VIBEBNB_MODE", "auto") or "auto").strip().lower()
+TARGET_COUNTRIES = ["FR", "IT", "ES", "GB", "DE"]
 
 # ----------------------------
-# Online config (Job + SQL Warehouse)
+# Mode selection (OFFLINE ONLY)
 # ----------------------------
-JOB_ID = int(os.environ.get("VIBEBNB_JOB_ID", "0") or "0")
-WAREHOUSE_ID = os.environ.get("DATABRICKS_SQL_ID", "") or ""
+VIBEBNB_MODE = "offline"
+
+# Online placeholders (unused)
+JOB_ID = 0
+WAREHOUSE_ID = ""
 RESULTS_TABLE = os.environ.get("VIBEBNB_RESULTS_TABLE", "app_demo.vibebnb_results")
 ONLINE_FILTER_LIMIT = int(os.environ.get("VIBEBNB_FILTER_LIMIT", "300") or "300")
 
 # ----------------------------
-# Offline config (UI sample + neighbors)
+# Offline config (UI sample + neighbors JSON)
 # ----------------------------
 UI_SAMPLE_PATH = os.environ.get(
     "VIBEBNB_UI_SAMPLE",
     os.path.join(app.root_path, "static", "listings_sample.json")
 )
-NEIGHBORS_DIR = os.environ.get(
-    "VIBEBNB_NEIGHBORS_DIR",
-    os.path.join(app.root_path, "static", "neighbors")
+
+# IMPORTANT:
+# Your export notebook writes JSON files under:
+#   static/neighbors_json/target_cc=IT/<target_id>.json
+# So we point the app to that directory.
+NEIGHBORS_JSON_DIR = os.environ.get(
+    "VIBEBNB_NEIGHBORS_JSON_DIR",
+    os.path.join(app.root_path, "static", "neighbors_json")
 )
 
 # ----------------------------
@@ -61,78 +66,22 @@ ENV_CHOICES = [
 ]
 BUDGET_CHOICES = ["", "Budget", "Mid-range", "Luxury"]
 
+# fixed candidates count
+N_CANDIDATES_FIXED = 50
+
 OFFLINE_LISTINGS_ALL: list[dict] = []
 COUNTRIES: list[str] = []
 
 # ----------------------------
-# Databricks auth helpers (ONLINE)
+# (Unused) Databricks session kept for compatibility
 # ----------------------------
 SESSION = requests.Session()
 
 def _safe_upper(x) -> str:
     return str(x).upper().strip() if x is not None else ""
 
-def _get_databricks_host() -> str | None:
-    for k in ["DATABRICKS_HOST", "DATABRICKS_WORKSPACE_URL", "WORKSPACE_URL", "DATABRICKS_URL"]:
-        v = os.environ.get(k)
-        if v:
-            if not v.startswith("http"):
-                v = "https://" + v
-            return v.rstrip("/")
-    return None
-
-def _get_pat_token() -> str | None:
-    for k in ["DATABRICKS_TOKEN", "DATABRICKS_AUTH_TOKEN", "DBX_TOKEN", "ACCESS_TOKEN"]:
-        v = os.environ.get(k)
-        if v:
-            return v
-    return None
-
-def _get_oauth_client() -> tuple[str | None, str | None]:
-    return os.environ.get("DATABRICKS_CLIENT_ID"), os.environ.get("DATABRICKS_CLIENT_SECRET")
-
-def _url(host: str, path: str) -> str:
-    return f"{host}{path}"
-
-def _mint_oauth_token(host: str, client_id: str, client_secret: str, timeout_s: int = 20) -> str:
-    token_url = _url(host, "/oidc/v1/token")
-    data = {
-        "grant_type": "client_credentials",
-        "scope": "all-apis",
-        "client_id": client_id,
-        "client_secret": client_secret,
-    }
-    r = requests.post(token_url, data=data, timeout=timeout_s)
-    r.raise_for_status()
-    tok = (r.json() or {}).get("access_token")
-    if not tok:
-        raise RuntimeError("OAuth token response missing access_token.")
-    return tok
-
-def _ensure_databricks_session() -> tuple[str, str]:
-    host = _get_databricks_host()
-    if not host:
-        raise RuntimeError("Missing DATABRICKS_HOST (workspace URL).")
-
-    token = _get_pat_token()
-    if token:
-        SESSION.headers.update({"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-        return host, token
-
-    client_id, client_secret = _get_oauth_client()
-    if client_id and client_secret:
-        token = _mint_oauth_token(host, client_id, client_secret)
-        SESSION.headers.update({"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-        return host, token
-
-    raise RuntimeError(
-        "No Databricks credentials found. Provide either:\n"
-        "- DATABRICKS_TOKEN, OR\n"
-        "- DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET."
-    )
-
 # ----------------------------
-# Load OFFLINE sample for filtering
+# Load OFFLINE sample for filtering (ALL Europe)
 # ----------------------------
 def load_ui_sample_europe_only():
     global OFFLINE_LISTINGS_ALL, COUNTRIES
@@ -236,37 +185,46 @@ def offline_filter_listings(country, city, min_rating, max_rating, min_price, ma
     return rows, cities
 
 # ----------------------------
-# OFFLINE: neighbors + local ranking
+# OFFLINE: load precomputed neighbors from JSON files
+# Expected structure:
+#   static/neighbors_json/target_cc=IT/<target_id>.json
+#
+# File format:
+#   {"target_id": "...", "target_cc": "IT", "results": [ {...}, {...}, ... ] }
 # ----------------------------
 def offline_load_candidates(target_id: str, target_country: str):
     cc = _safe_upper(target_country)
     tid = str(target_id).strip()
 
-    patterns = [
-        os.path.join(NEIGHBORS_DIR, cc, f"{tid}.json"),
-        os.path.join(NEIGHBORS_DIR, f"target_cc={cc}", f"{tid}.json"),
-        os.path.join(NEIGHBORS_DIR, cc, f"{tid}*.json"),
-        os.path.join(NEIGHBORS_DIR, f"target_cc={cc}", f"{tid}*.json"),
-    ]
+    base_dir = os.path.join(NEIGHBORS_JSON_DIR, f"target_cc={cc}")
+    path_used = os.path.join(base_dir, f"{tid}.json")
 
-    path_used = None
-    for pat in patterns:
-        found = glob.glob(pat)
-        if found:
-            path_used = found[0]
-            break
+    # Support a "json/" subfolder if you used that variant
+    alt_path = os.path.join(base_dir, "json", f"{tid}.json")
 
-    if not path_used:
+    if os.path.exists(path_used):
+        chosen = path_used
+    elif os.path.exists(alt_path):
+        chosen = alt_path
+    else:
+        # Best-effort glob in case of slight naming differences
+        found = glob.glob(os.path.join(base_dir, f"{tid}*.json")) + glob.glob(os.path.join(base_dir, "json", f"{tid}*.json"))
+        chosen = found[0] if found else None
+
+    if not chosen:
         return [], None
 
-    with open(path_used, "r", encoding="utf-8") as f:
+    with open(chosen, "r", encoding="utf-8") as f:
         payload = json.load(f)
 
     rows = payload.get("results", []) if isinstance(payload, dict) else payload
     if not isinstance(rows, list):
         rows = []
-    return rows, path_used
+    return rows, chosen
 
+# ----------------------------
+# OFFLINE: local ranking
+# ----------------------------
 def offline_rank_candidates(
     candidates: list[dict],
     k_show: int,
@@ -278,16 +236,32 @@ def offline_rank_candidates(
     env_weights: dict[str, float],
     temp_pref: float | None,
     travel_month: int | None,
-    budget_pref: str
+    budget_pref: str,
+    normalize_all_weights: bool = True,
+    score_col: str = "final_score",
 ):
-    main = _normalize_weights_nonneg({
+    env_weights = env_weights or {}
+
+    # --- normalize everything together (like Spark order(...)) ---
+    all_w = {
         "price": w_price,
         "property": w_property,
         "host": w_host,
         "temp": w_temp,
         "budget": w_budget,
-    })
-    env_w = _normalize_weights_nonneg(env_weights or {})
+        **{f"env::{k}": v for k, v in env_weights.items()},
+    }
+
+    if normalize_all_weights:
+        w_norm = _normalize_weights_nonneg(all_w)
+    else:
+        w_norm = {k: float(v) for k, v in all_w.items()}
+
+    price_w = float(w_norm.get("price", 0.0))
+    property_w = float(w_norm.get("property", 0.0))
+    host_w = float(w_norm.get("host", 0.0))
+    temp_w = float(w_norm.get("temp", 0.0))
+    budget_w = float(w_norm.get("budget", 0.0))
 
     def getf(row, key, default=0.0):
         v = row.get(key, default)
@@ -296,227 +270,76 @@ def offline_rank_candidates(
         except Exception:
             return float(default)
 
-    def budget_match_score(row):
-        if not budget_pref:
-            return 0.0
-        lvl = (row.get("budget_level") or "").strip()
-        return 1.0 if lvl.lower() == budget_pref.lower() else 0.0
-
-    def temp_match_score(row):
-        if temp_pref is None or travel_month is None:
+    # --- Spark-like temperature score: 1 - diff/25 ---
+    def temp_score_raw(row):
+        if temp_pref is None or travel_month is None or not temp_w:
             return 0.0
         m = int(travel_month)
         if m < 1 or m > 12:
             return 0.0
         col = f"temp_avg_m{m:02d}"
-        t = row.get(col, None)
         try:
-            t = float(t)
+            t = float(row.get(col))
         except Exception:
             return 0.0
         diff = abs(t - float(temp_pref))
-        return max(0.0, 1.0 - diff / 15.0)
+        return max(0.0, 1.0 - diff / 25.0)
+
+    # --- Spark-like budget score: partial credit by distance/2 ---
+    def budget_score_raw(row):
+        if not budget_w or not budget_pref:
+            return 0.0
+
+        rank_map = {"Budget": 1, "Mid-range": 2, "Luxury": 3}
+        lvl = (row.get("budget_level") or "").strip()
+        a = rank_map.get(lvl)
+        b = rank_map.get((budget_pref or "").strip())
+        if a is None or b is None:
+            return 0.0
+        return max(0.0, 1.0 - (abs(a - b) / 2.0))
 
     ranked = []
     for r in candidates:
-        price_s = getf(r, "price_score", 0.0)
-        prop_s  = getf(r, "property_quality", 0.0)
-        host_s  = getf(r, "host_quality", 0.0)
+        score = 0.0
 
-        env_s = 0.0
-        for col, w in env_w.items():
-            env_s += w * getf(r, col, 0.0)
+        # base components
+        if price_w:
+            score += price_w * getf(r, "price_score", 0.0)
+        if property_w:
+            score += property_w * getf(r, "property_quality", 0.0)
+        if host_w:
+            score += host_w * getf(r, "host_quality", 0.0)
 
-        temp_s = temp_match_score(r)
-        budg_s = budget_match_score(r)
+        # env components: expect *_norm columns (like Spark)
+        for env_col, raw_w in env_weights.items():
+            wv = float(w_norm.get(f"env::{env_col}", raw_w)) if normalize_all_weights else float(raw_w)
+            if not wv:
+                continue
+            norm_col = env_col if str(env_col).endswith("_norm") else f"{env_col}_norm"
+            score += wv * getf(r, norm_col, 0.0)
 
-        final = (
-            main["price"] * price_s +
-            main["property"] * prop_s +
-            main["host"] * host_s +
-            env_s +
-            main["temp"] * temp_s +
-            main["budget"] * budg_s
-        )
+        # temp + budget
+        if temp_w:
+            score += temp_w * temp_score_raw(r)
+        if budget_w:
+            score += budget_w * budget_score_raw(r)
 
         rr = dict(r)
-        rr["final_score"] = float(final)
+        rr[score_col] = float(score)
         ranked.append(rr)
 
-    ranked.sort(key=lambda x: (-(x.get("final_score") or 0.0), x.get("l2_dist") or 1e9))
+    # Spark: orderBy(score desc).limit(k)
+    # Tie-break: keep your l2_dist tie-breaker (fine; Spark version didn't specify tie-break)
+    ranked.sort(key=lambda x: (-(x.get(score_col) or 0.0), x.get("l2_dist") or 1e9))
     return ranked[: max(1, int(k_show))]
 
-# ----------------------------
-# ONLINE: Job runner (supports 2 actions)
-# ----------------------------
-def run_job_and_get_result_string(notebook_params: dict, timeout_s: int = 300, poll_s: float = 1.5):
-    if JOB_ID <= 0:
-        raise RuntimeError("VIBEBNB_JOB_ID is missing/invalid.")
-
-    host, _ = _ensure_databricks_session()
-
-    resp = SESSION.post(
-        _url(host, "/api/2.1/jobs/run-now"),
-        data=json.dumps({"job_id": JOB_ID, "notebook_params": notebook_params}),
-        timeout=30
-    )
-    resp.raise_for_status()
-    run_id = resp.json()["run_id"]
-
-    t0 = time.time()
-    while True:
-        r = SESSION.get(_url(host, "/api/2.1/jobs/runs/get"), params={"run_id": run_id}, timeout=30)
-        r.raise_for_status()
-        info = r.json()
-
-        state = info.get("state", {})
-        life = state.get("life_cycle_state")
-        result = state.get("result_state")
-        msg = state.get("state_message", "")
-
-        if life == "TERMINATED":
-            if result != "SUCCESS":
-                raise RuntimeError(f"Job failed: result_state={result}. {msg}")
-            break
-
-        if time.time() - t0 > timeout_s:
-            raise TimeoutError(f"Timed out after {timeout_s}s (run_id={run_id})")
-
-        time.sleep(poll_s)
-
-    out = SESSION.get(_url(host, "/api/2.1/jobs/runs/get-output"), params={"run_id": run_id}, timeout=30)
-    out.raise_for_status()
-    out_json = out.json()
-
-    result_str = out_json.get("notebook_output", {}).get("result")
-    if not result_str:
-        raise RuntimeError("No notebook_output.result found. Notebook must exit via dbutils.notebook.exit(...).")
-
-    return str(result_str), int(run_id)
-
-def sql_fetch_results_by_request_id(request_id: str, limit: int = 200):
-    if not WAREHOUSE_ID:
-        raise RuntimeError("Missing DATABRICKS_SQL_ID (SQL Warehouse ID).")
-
-    host, _ = _ensure_databricks_session()
-
-    statement = f"""
-    SELECT
-      request_id, created_at, target_id, target_country, rank,
-      property_id, addr_cc, listing_title, addr_name, room_type_text,
-      price_per_night, ratings, l2_dist, final_score, final_url
-    FROM {RESULTS_TABLE}
-    WHERE request_id = '{request_id}'
-    ORDER BY rank
-    LIMIT {int(limit)}
-    """
-
-    payload = {
-        "warehouse_id": WAREHOUSE_ID,
-        "statement": statement,
-        "disposition": "INLINE",
-        "wait_timeout": "10s",
-        "format": "JSON_ARRAY",
-    }
-
-    r = SESSION.post(_url(host, "/api/2.0/sql/statements/"), json=payload, timeout=30)
-    r.raise_for_status()
-    j = r.json()
-    statement_id = j.get("statement_id")
-    if not statement_id:
-        raise RuntimeError("SQL API response missing statement_id.")
-
-    t0 = time.time()
-    while True:
-        g = SESSION.get(_url(host, f"/api/2.0/sql/statements/{statement_id}"), timeout=30)
-        g.raise_for_status()
-        sj = g.json()
-
-        status = (sj.get("status") or {}).get("state")
-        if status == "SUCCEEDED":
-            break
-        if status in ("FAILED", "CANCELED", "CLOSED"):
-            err = (sj.get("status") or {}).get("error") or {}
-            raise RuntimeError(f"SQL statement {status}: {err}")
-
-        if time.time() - t0 > 60:
-            raise TimeoutError("SQL query timed out (>60s).")
-
-        time.sleep(0.8)
-
-    result = sj.get("result") or {}
-    data = result.get("data_array") or []
-    schema = (sj.get("manifest") or {}).get("schema") or {}
-    cols = [c.get("name") for c in (schema.get("columns") or [])]
-
-    rows = []
-    for arr in data:
-        row = {}
-        for i, v in enumerate(arr):
-            if i < len(cols):
-                row[cols[i]] = v
-        rows.append(row)
-    return rows
-
-# ----------------------------
-# ONLINE filter via Job
-# ----------------------------
-def online_filter_listings_via_job(filter_country, filter_city, min_rating, max_rating, min_price, max_price, limit):
-    params = {
-        "action": "filter_listings",
-        "filter_country": _safe_upper(filter_country),
-        "filter_city": (filter_city or "").strip(),
-        "min_rating": "" if min_rating is None else str(min_rating),
-        "max_rating": "" if max_rating is None else str(max_rating),
-        "min_price": "" if min_price is None else str(min_price),
-        "max_price": "" if max_price is None else str(max_price),
-        "limit": str(int(limit)),
-    }
-    result_str, _ = run_job_and_get_result_string(params)
-    try:
-        payload = json.loads(result_str)
-    except Exception:
-        raise RuntimeError("Filter job returned non-JSON output.")
-
-    if not payload.get("ok"):
-        raise RuntimeError(payload.get("error", "Unknown error in filter_listings job."))
-
-    listings = payload.get("listings", [])
-    cities = payload.get("cities", [])
-    if not isinstance(listings, list): listings = []
-    if not isinstance(cities, list): cities = []
-    return listings, cities
-
-# ----------------------------
-# Mode resolver
-# ----------------------------
-def _online_ready():
-    if JOB_ID <= 0:
-        return False, "Missing/invalid VIBEBNB_JOB_ID"
-    try:
-        _ensure_databricks_session()
-    except Exception as e:
-        return False, f"Databricks auth not ready: {e}"
-    return True, "OK"
-
-def _choose_mode():
-    if VIBEBNB_MODE == "offline":
-        return "offline", "forced by VIBEBNB_MODE"
-    if VIBEBNB_MODE == "online":
-        ok, why = _online_ready()
-        return ("online", "forced by VIBEBNB_MODE") if ok else ("offline", f"online forced but not ready: {why}")
-    ok, why = _online_ready()
-    if ok:
-        return "online", "auto-selected (online ready)"
-    return "offline", f"auto-selected (online not ready: {why})"
 
 # ----------------------------
 # Routes
 # ----------------------------
 @app.get("/")
 def info():
-    mode, mode_reason = _choose_mode()
-    return render_template("info.html", mode=mode, mode_reason=mode_reason)
+    return render_template("info.html", mode="offline", mode_reason="offline only")
 
 @app.get("/filters")
 def filters():
@@ -524,11 +347,8 @@ def filters():
     ONE PAGE:
       - Filters form
       - Listings table (after filtering)
-      - User can change filters and click Filter again
+    Filtering uses ALL Europe countries.
     """
-    mode, mode_reason = _choose_mode()
-
-    # Read filter args (GET)
     filter_country = _safe_upper(request.args.get("filter_country", "") or "")
     filter_city = (request.args.get("filter_city", "") or "").strip()
 
@@ -537,8 +357,6 @@ def filters():
     min_price  = _to_float(request.args.get("min_price", ""), None) if (request.args.get("min_price", "") or "").strip() else None
     max_price  = _to_float(request.args.get("max_price", ""), None) if (request.args.get("max_price", "") or "").strip() else None
 
-    # Always compute city choices for selected country
-    # If online: ask job (city list) only when a country is selected or any filter exists
     listings = []
     city_choices = []
     status = None
@@ -550,42 +368,28 @@ def filters():
     ])
 
     try:
-        if mode == "online":
-            if any_filter_used:
-                listings, city_choices = online_filter_listings_via_job(
-                    filter_country, filter_city, min_rating, max_rating, min_price, max_price, ONLINE_FILTER_LIMIT
-                )
-                status = f"Found {len(listings)} listings (online)."
-            else:
-                # no filter yet -> still show country dropdown but empty city list + empty table
-                listings, city_choices = [], []
-                status = "Set filters and click Filter to see listings."
+        if any_filter_used:
+            listings, city_choices = offline_filter_listings(
+                filter_country, filter_city, min_rating, max_rating, min_price, max_price, ONLINE_FILTER_LIMIT
+            )
+            status = f"Found {len(listings)} listings (offline)."
         else:
-            # offline: we can always compute city choices even without pressing filter
-            # but keep listings empty until user applies any filter (optional)
-            if any_filter_used:
-                listings, city_choices = offline_filter_listings(
-                    filter_country, filter_city, min_rating, max_rating, min_price, max_price, ONLINE_FILTER_LIMIT
-                )
-                status = f"Found {len(listings)} listings (offline)."
-            else:
-                # compute city_choices based on country selection (if any)
-                _, city_choices = offline_filter_listings(
-                    filter_country, "", None, None, None, None, ONLINE_FILTER_LIMIT
-                )
-                listings = []
-                status = "Set filters and click Filter to see listings."
+            _, city_choices = offline_filter_listings(
+                filter_country, "", None, None, None, None, ONLINE_FILTER_LIMIT
+            )
+            listings = []
+            status = "Set filters and click Filter to see listings."
     except Exception as e:
         listings = []
         city_choices = []
-        status = f"Filtering error ({mode}): {e}"
+        status = f"Filtering error (offline): {e}"
 
     countries = sorted(COUNTRIES) if COUNTRIES else sorted(EUROPE_CC)
 
     return render_template(
         "filters.html",
-        mode=mode,
-        mode_reason=mode_reason,
+        mode="offline",
+        mode_reason="offline only",
         countries=countries,
         city_choices=city_choices,
         listings=listings,
@@ -602,12 +406,11 @@ def filters():
 def preferences():
     """
     Comes from filters page after selecting a reference listing.
+    Target countries: ONLY 5 (FR, IT, ES, GB, DE).
+    n_candidates: ALWAYS 50.
     """
     if request.method == "GET":
-        # If someone opens /preferences directly, redirect to filters
-        return render_template("info.html", mode=_choose_mode()[0], mode_reason=_choose_mode()[1])
-
-    mode, mode_reason = _choose_mode()
+        return render_template("info.html", mode="offline", mode_reason="offline only")
 
     selected_listing_id = (request.form.get("selected_listing_id", "") or "").strip()
 
@@ -619,18 +422,16 @@ def preferences():
     min_price  = _to_float(request.form.get("min_price", ""), None) if (request.form.get("min_price", "") or "").strip() else None
     max_price  = _to_float(request.form.get("max_price", ""), None) if (request.form.get("max_price", "") or "").strip() else None
 
-    # defaults for this screen
     target_country = _safe_upper(request.form.get("target_country", "") or "")
-    n_candidates = _to_int(request.form.get("n_candidates", "50"), 50)
+    n_candidates = N_CANDIDATES_FIXED
     k_show = _to_int(request.form.get("k_show", "10"), 10)
 
     status = None
     if not selected_listing_id:
         status = "Please select a reference listing first."
-        # redirect back to filters with same args
         return render_template(
             "filters.html",
-            mode=mode, mode_reason=mode_reason,
+            mode="offline", mode_reason="offline only",
             countries=sorted(COUNTRIES) if COUNTRIES else sorted(EUROPE_CC),
             city_choices=[],
             listings=[],
@@ -640,13 +441,11 @@ def preferences():
             status=status
         )
 
-    countries = sorted(COUNTRIES) if COUNTRIES else sorted(EUROPE_CC)
-
     return render_template(
         "preferences.html",
-        mode=mode,
-        mode_reason=mode_reason,
-        countries=countries,
+        mode="offline",
+        mode_reason="offline only",
+        countries=TARGET_COUNTRIES,
         env_choices=ENV_CHOICES,
         budget_choices=BUDGET_CHOICES,
 
@@ -666,18 +465,107 @@ def preferences():
         status=status
     )
 
+# @app.route("/results", methods=["GET", "POST"])
+# def results():
+#     if request.method == "GET":
+#         return render_template("info.html", mode="offline", mode_reason="offline only")
+
+#     target_id = (request.form.get("selected_listing_id", "") or "").strip()
+#     target_country = _safe_upper(request.form.get("target_country", ""))
+
+#     n_candidates = N_CANDIDATES_FIXED
+#     k_show = _to_int(request.form.get("k_show", "10"), 10)
+
+#     w_price = _to_float(request.form.get("w_price", "0"), 0.0) or 0.0
+#     w_property = _to_float(request.form.get("w_property", "0"), 0.0) or 0.0
+#     w_host = _to_float(request.form.get("w_host", "0"), 0.0) or 0.0
+#     w_temp = _to_float(request.form.get("w_temp", "0"), 0.0) or 0.0
+#     w_budget = _to_float(request.form.get("w_budget", "0"), 0.0) or 0.0
+
+#     temp_pref_raw = (request.form.get("temp_pref", "") or "").strip()
+#     temp_pref = _to_float(temp_pref_raw, None) if temp_pref_raw else None
+
+#     travel_month_raw = (request.form.get("travel_month", "") or "").strip()
+#     travel_month = _to_int(travel_month_raw, None) if travel_month_raw else None
+
+#     budget_pref = (request.form.get("budget_pref", "") or "").strip() or ""
+
+#     env_weights = {}
+#     for c in ENV_CHOICES:
+#         env_weights[c] = float(_to_float(request.form.get(f"w_{c}", "0"), 0.0) or 0.0)
+
+#     results_rows = []
+#     result_msg = None
+
+#     if not target_id:
+#         result_msg = "Missing selected_listing_id."
+#         return render_template("results.html", mode="offline", mode_reason="offline only", results_rows=[], result=result_msg)
+
+#     if not target_country:
+#         result_msg = "Please choose a target country."
+#         return render_template("results.html", mode="offline", mode_reason="offline only", results_rows=[], result=result_msg)
+
+#     if target_country not in TARGET_COUNTRIES:
+#         result_msg = f"Target country must be one of: {', '.join(TARGET_COUNTRIES)}."
+#         return render_template("results.html", mode="offline", mode_reason="offline only", results_rows=[], result=result_msg)
+
+#     try:
+#         t0 = time.perf_counter()
+
+#         candidates, path_used = offline_load_candidates(target_id, target_country)
+#         if not candidates:
+#             expected = Path(NEIGHBORS_JSON_DIR) / f"target_cc={target_country}" / f"{target_id}.json"
+#             expected_alt = Path(NEIGHBORS_JSON_DIR) / f"target_cc={target_country}" / "json" / f"{target_id}.json"
+#             raise RuntimeError(
+#                 "Offline mode: no precomputed neighbors found.\n"
+#                 f"Tried:\n- {expected}\n- {expected_alt}\n"
+#                 f"Neighbors JSON dir: {NEIGHBORS_JSON_DIR}"
+#             )
+
+#         candidates = candidates[:N_CANDIDATES_FIXED]
+
+#         results_rows = offline_rank_candidates(
+#             candidates=candidates,
+#             k_show=k_show,
+#             w_price=w_price,
+#             w_property=w_property,
+#             w_host=w_host,
+#             w_temp=w_temp,
+#             w_budget=w_budget,
+#             env_weights=env_weights,
+#             temp_pref=temp_pref,
+#             travel_month=travel_month,
+#             budget_pref=budget_pref,
+#         )
+
+#         t1 = time.perf_counter()
+#         result_msg = (
+#             f"Offline: ranked top {len(results_rows)} "
+#             f"(loaded {len(candidates)} / {N_CANDIDATES_FIXED} from {path_used}). "
+#             f"({t1 - t0:.2f}s)"
+#         )
+
+#     except Exception as e:
+#         result_msg = f"Error (offline): {e}"
+#         results_rows = []
+
+#     return render_template(
+#         "results.html",
+#         mode="offline",
+#         mode_reason="offline only",
+#         results_rows=results_rows,
+#         result=result_msg
+#     )
 @app.route("/results", methods=["GET", "POST"])
 def results():
     if request.method == "GET":
-        # direct open -> go to filters
-        return render_template("info.html", mode=_choose_mode()[0], mode_reason=_choose_mode()[1])
-
-    mode, mode_reason = _choose_mode()
+        return render_template("info.html", mode="offline", mode_reason="offline only")
 
     target_id = (request.form.get("selected_listing_id", "") or "").strip()
     target_country = _safe_upper(request.form.get("target_country", ""))
 
-    n_candidates = _to_int(request.form.get("n_candidates", "50"), 50)
+    # fixed
+    n_candidates = N_CANDIDATES_FIXED
     k_show = _to_int(request.form.get("k_show", "10"), 10)
 
     w_price = _to_float(request.form.get("w_price", "0"), 0.0) or 0.0
@@ -698,86 +586,89 @@ def results():
     for c in ENV_CHOICES:
         env_weights[c] = float(_to_float(request.form.get(f"w_{c}", "0"), 0.0) or 0.0)
 
-    results_rows = []
-    result_msg = None
-
     if not target_id:
-        result_msg = "Missing selected_listing_id."
-        return render_template("results.html", mode=mode, mode_reason=mode_reason, results_rows=[], result=result_msg)
+        return render_template(
+            "results.html",
+            mode="offline",
+            mode_reason="offline only",
+            results_rows=[],
+            result="Missing selected_listing_id."
+        )
 
     if not target_country:
-        result_msg = "Please choose a target country."
-        return render_template("results.html", mode=mode, mode_reason=mode_reason, results_rows=[], result=result_msg)
+        return render_template(
+            "results.html",
+            mode="offline",
+            mode_reason="offline only",
+            results_rows=[],
+            result="Please choose a target country."
+        )
 
-    if target_country not in EUROPE_CC:
-        result_msg = "Target country must be in Europe."
-        return render_template("results.html", mode=mode, mode_reason=mode_reason, results_rows=[], result=result_msg)
+    if target_country not in TARGET_COUNTRIES:
+        return render_template(
+            "results.html",
+            mode="offline",
+            mode_reason="offline only",
+            results_rows=[],
+            result=f"Target country must be one of: {', '.join(TARGET_COUNTRIES)}."
+        )
 
     try:
         t0 = time.perf_counter()
 
-        if mode == "offline":
-            candidates, path_used = offline_load_candidates(target_id, target_country)
-            if not candidates:
-                raise RuntimeError(
-                    "Offline mode: no precomputed neighbors found.\n"
-                    f"Expected file like: {Path(NEIGHBORS_DIR)/target_country/(target_id+'.json')}"
-                )
-            candidates = candidates[: max(1, int(n_candidates))]
-            results_rows = offline_rank_candidates(
-                candidates=candidates,
-                k_show=k_show,
-                w_price=w_price,
-                w_property=w_property,
-                w_host=w_host,
-                w_temp=w_temp,
-                w_budget=w_budget,
-                env_weights=env_weights,
-                temp_pref=temp_pref,
-                travel_month=travel_month,
-                budget_pref=budget_pref,
+        # Load precomputed neighbors
+        candidates, path_used = offline_load_candidates(target_id, target_country)
+        if not candidates:
+            expected_folder = Path(NEIGHBORS_DIR) / f"target_cc={target_country}"
+            raise RuntimeError(
+                "Offline mode: no precomputed neighbors found.\n"
+                f"Expected folder like: {expected_folder}\n"
+                "Make sure the folder exists under static/neighbors and contains the JSON files."
             )
-            result_msg = f"Offline: ranked top {len(results_rows)} (loaded {len(candidates)} from {path_used})."
 
-        else:
-            if not WAREHOUSE_ID:
-                raise RuntimeError("Missing DATABRICKS_SQL_ID (SQL Warehouse ID) required for online results.")
+        candidates = candidates[:n_candidates]
 
-            notebook_params = {
-                "action": "recommend",
-                "target_id": target_id,
-                "target_country": target_country,
-                "n_candidates": str(n_candidates),
-                "k_show": str(k_show),
-                "w_price": str(w_price),
-                "w_property": str(w_property),
-                "w_host": str(w_host),
-                "w_temp": str(w_temp),
-                "w_budget": str(w_budget),
-                "temp_pref": "" if temp_pref is None else str(temp_pref),
-                "travel_month": "" if travel_month is None else str(travel_month),
-                "budget_pref": str(budget_pref),
-                "env_weights_json": json.dumps(env_weights),
-                "results_table": RESULTS_TABLE,
-                "cleanup_old": "1",
-            }
+        ranked = offline_rank_candidates(
+            candidates=candidates,
+            k_show=k_show,
+            w_price=w_price,
+            w_property=w_property,
+            w_host=w_host,
+            w_temp=w_temp,
+            w_budget=w_budget,
+            env_weights=env_weights,
+            temp_pref=temp_pref,
+            travel_month=travel_month,
+            budget_pref=budget_pref,
+        )
 
-            result_str, run_id = run_job_and_get_result_string(notebook_params)
-            request_id = result_str.strip()
-            results_rows = sql_fetch_results_by_request_id(request_id, limit=max(50, k_show))
-            result_msg = f"Online: run {run_id} finished | request_id={request_id} | rows={len(results_rows)}."
+        # ✅ UI: keep only user-facing fields (hide dist/similarity)
+        KEEP = [
+            "listing_title",
+            "addr_cc",
+            "addr_name",
+            "room_type_text",
+            "price_per_night",
+            "ratings",
+            "final_url",
+        ]
+        results_rows = [{k: r.get(k) for k in KEEP} for r in ranked]
 
         t1 = time.perf_counter()
-        result_msg = (result_msg or "") + f" (mode={mode}, {t1 - t0:.2f}s)"
+        result_msg = (
+            f"Offline: ranked top {len(results_rows)} "
+            f"(loaded {len(candidates)} / {N_CANDIDATES_FIXED} from {path_used}). "
+            f"({t1 - t0:.2f}s)"
+        )
 
     except Exception as e:
-        result_msg = f"Error ({mode}): {e}"
+        result_msg = f"Error (offline): {e}"
         results_rows = []
 
     return render_template(
         "results.html",
-        mode=mode,
-        mode_reason=mode_reason,
+        mode="offline",
+        mode_reason="offline only",
         results_rows=results_rows,
         result=result_msg
     )

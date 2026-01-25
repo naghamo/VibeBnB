@@ -3,13 +3,6 @@
 
 <h2 class="section-title">Results</h2>
 
-{% if result %}
-  <div class="result" style="margin-top:10px;">
-    <div class="result-title">Status</div>
-    <div class="result-body">{{ result }}</div>
-  </div>
-{% endif %}
-
 {% if results_rows %}
   <hr class="divider" style="margin-top:18px;">
 
@@ -26,8 +19,7 @@
           <th>Type</th>
           <th>Price</th>
           <th>Rating</th>
-          <th>Similarity</th>
-          <th>Final score</th>
+          <th>Link</th>
         </tr>
       </thead>
       <tbody>
@@ -40,8 +32,15 @@
           <td>{{ r.room_type_text }}</td>
           <td>{{ r.price_per_night }}</td>
           <td>{{ r.ratings }}</td>
-          <td>{{ "%.4f"|format(r.l2_dist) if r.l2_dist is not none else "" }}</td>
-          <td>{{ "%.4f"|format(r.final_score) if r.final_score is not none else "" }}</td>
+          <td>
+            {% if r.final_url %}
+              <a class="btn small" href="{{ r.final_url }}" target="_blank" rel="noopener noreferrer">
+                Open
+              </a>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

@@ -179,8 +179,8 @@ if __name__ == "__main__":
     t_job = time.perf_counter()
     print("[SCORING] Job started")
 
-    in_path = "dbfs:/vibebnb/data/europe_countries_joined"
-    out_path = "dbfs:/vibebnb/data/europe_countries_scored.parquet"
+    in_path = "dbfs:/vibebnb/data/europe_countries_joined_"
+    out_path = "dbfs:/vibebnb/data/europe_countries_scored_.parquet"
 
     t0 = time.perf_counter()
     df = spark.read.parquet(in_path).persist(StorageLevel.MEMORY_AND_DISK)

@@ -3,10 +3,9 @@ from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
 from pyspark.storagelevel import StorageLevel
 import time
-from travel_cities_data_loader import load_travel_cities
 from config import *   
-from airbnb_data_loader import load_airbnb_data
-from travel_cities_data_loader import load_travel_cities
+from data.airbnb_data_loader import load_airbnb_data
+from data.travel_cities_data_loader import load_travel_cities
 
 
 def cities_airbnb_join(cities_df: DataFrame, airbnb_df: DataFrame) -> DataFrame:
@@ -187,6 +186,6 @@ def join_europe_by_country_and_save(
     print("\n[EU] Done. Saved per-country datasets only.")
 
 
-join_europe_by_country_and_save(
-    out_countries_dir="dbfs:/vibebnb/data/europe_countries_joined",
-)
+# join_europe_by_country_and_save(
+#     out_countries_dir="dbfs:/vibebnb/data/europe_countries_joined_",
+# )

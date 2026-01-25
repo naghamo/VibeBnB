@@ -132,19 +132,24 @@ A lightweight interactive prototype of the system is deployed and available at:
 
 🔗 **https://vibebnb-983293358114278.18.azure.databricksapps.com/**
 
-The interface operates entirely on precomputed data and does not require running
-any notebooks or jobs in Databricks. Users can simply open the link and interact
-with the system.
+The interface operates entirely on precomputed artifacts and does not require
+running any notebooks or jobs in Databricks. Users can simply open the link and
+interact with the system.
 
 The prototype is intentionally limited in scope:
 - it uses **500 randomly sampled reference listings**,
 - recommendations are available for **five selected target countries**,
-- for each reference listing and target country, **50 candidate listings** are
-  precomputed and stored.
+- for each reference listing and target country, the top **50 candidate listings**
+  are precomputed, stored, and served by the application.
 
-At runtime, the interface applies the same preference-aware ranking mechanism as
-the full online pipeline to reorder the precomputed candidates according to user
-preferences.
+The preprocessing step that generates these prototype assets is implemented in
+`data\prototype_data.py`. 
+
+At runtime, the interface applies the same
+preference-aware ranking mechanism used in the full online pipeline to reorder
+the precomputed candidates according to user preferences.
+
+
 
 ---
 
@@ -168,6 +173,7 @@ offline computation, online retrieval, and application deployment:
 │   ├── airbnb_data_loader.py       # Airbnb listings loading and preprocessing
 │   ├── travel_cities_data_loader.py# City-level travel data loading and preprocessing
 │   ├── osm_extraction.py           # OpenStreetMap POI extraction and preprocessing
+│   ├── prototype_data.py           # Prototype Data generating 
 │   └── data_join.py                # Cross-source data integration and joins
 │
 ├── EDA/                            # Exploratory data analysis

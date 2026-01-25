@@ -194,8 +194,8 @@ def build_global_models_and_save(
 # Run
 # -----------------------------
 build_global_models_and_save(
-    scored_input_path="dbfs:/vibebnb/data/europe_countries_scored.parquet",
-    embedded_out_path="dbfs:/vibebnb/data/europe_countries_embedded",
-    emb_model_path="dbfs:/vibebnb/models/embedding_pipeline_global",
-    lsh_model_path="dbfs:/vibebnb/models/lsh_global"
+    scored_input_path="dbfs:/vibebnb/data/europe_countries_scored_.parquet",
+    embedded_out_path="dbfs:/vibebnb/data/europe_countries_embedded_",
+    emb_model_path="dbfs:/vibebnb/models/embedding_pipeline_global_",
+    lsh_model_path="dbfs:/vibebnb/models/lsh_global_"
 )

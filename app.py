@@ -29,7 +29,7 @@ TARGET_COUNTRIES = ["FR", "IT", "ES", "GB", "DE"]
 # ----------------------------
 VIBEBNB_MODE = "offline"
 
-# Online placeholders (unused)
+# Online placeholders 
 JOB_ID = 0
 WAREHOUSE_ID = ""
 RESULTS_TABLE = os.environ.get("VIBEBNB_RESULTS_TABLE", "app_demo.vibebnb_results")
@@ -43,10 +43,6 @@ UI_SAMPLE_PATH = os.environ.get(
     os.path.join(app.root_path, "static", "listings_sample.json")
 )
 
-# IMPORTANT:
-# Your export notebook writes JSON files under:
-#   static/neighbors_json/target_cc=IT/<target_id>.json
-# So we point the app to that directory.
 NEIGHBORS_JSON_DIR = os.environ.get(
     "VIBEBNB_NEIGHBORS_JSON_DIR",
     os.path.join(app.root_path, "static", "neighbors_json")
@@ -72,17 +68,12 @@ N_CANDIDATES_FIXED = 50
 OFFLINE_LISTINGS_ALL: list[dict] = []
 COUNTRIES: list[str] = []
 
-# ----------------------------
-# (Unused) Databricks session kept for compatibility
-# ----------------------------
+
 SESSION = requests.Session()
 
 def _safe_upper(x) -> str:
     return str(x).upper().strip() if x is not None else ""
 
-# ----------------------------
-# Load OFFLINE sample for filtering (ALL Europe)
-# ----------------------------
 def load_ui_sample_europe_only():
     global OFFLINE_LISTINGS_ALL, COUNTRIES
     try:
@@ -619,7 +610,7 @@ def results():
         # Load precomputed neighbors
         candidates, path_used = offline_load_candidates(target_id, target_country)
         if not candidates:
-            expected_folder = Path(NEIGHBORS_DIR) / f"target_cc={target_country}"
+            expected_folder = Path(NEIGHBORS_JSON_DIR) / f"target_cc={target_country}"
             raise RuntimeError(
                 "Offline mode: no precomputed neighbors found.\n"
                 f"Expected folder like: {expected_folder}\n"

@@ -29,7 +29,7 @@ TARGET_COUNTRIES = ["FR", "IT", "ES", "GB", "DE"]
 # ----------------------------
 VIBEBNB_MODE = "offline"
 
-# Online placeholders 
+# Online placeholders that was made to run with spark but insted we have the demo notebook since we can not run the job without the premisions of databrickes
 JOB_ID = 0
 WAREHOUSE_ID = ""
 RESULTS_TABLE = os.environ.get("VIBEBNB_RESULTS_TABLE", "app_demo.vibebnb_results")

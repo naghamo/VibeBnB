@@ -95,7 +95,8 @@ offline_pipeline_run.ipynb
 ```
 
 To run the offline pipeline:
-1. Open the notebook in Databricks.
+1. Clone the Repo into Databricks.
+1. Open the notebook.
 2. Run all cells **in order**.
 
 The notebook performs all required stages, including data cleaning, data integration, score

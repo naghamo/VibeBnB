@@ -167,11 +167,16 @@ offline computation, online retrieval, and application deployment:
 ├── data/                           # Data loading and integration logic
 │   ├── airbnb_data_loader.py       # Airbnb listings loading and preprocessing
 │   ├── travel_cities_data_loader.py# City-level travel data loading and preprocessing
-│   ├─  osm_extraction.py           # OpenStreetMap POI extraction and preprocessing
+│   ├── osm_extraction.py           # OpenStreetMap POI extraction and preprocessing
 │   └── data_join.py                # Cross-source data integration and joins
 │
 ├── EDA/                            # Exploratory data analysis
-│   ├── data_analysis/              # Analysis notebooks and scripts
+│   └── data_analysis/              # Analysis notebooks and scripts
+│
+├── offline/ 
+│   ├── offline_pipeline_run.ipynb  # Full offline pipeline execution notebook 
+│   ├── score.py                    # Interpretable score computation logic
+│   └── embeddings_fit.py           # Embedding construction and LSH indexing  
 │
 ├── eval/                           # Evaluation scripts and analysis utilities
 │
@@ -182,11 +187,8 @@ offline computation, online retrieval, and application deployment:
 ├── app.yaml                        # Databricks Apps deployment configuration  $ 
 ├── config.py                       # Global configuration and constants
 │
-├── offline_pipeline_run.ipynb      # Full offline pipeline execution notebook
 ├── demo.ipynb                      # End-to-end demo of the online pipeline
 │
-├── score.py                        # Interpretable score computation logic
-├── embeddings_fit.py               # Embedding construction and LSH indexing
 ├── retrieve_rank.py                # Online retrieval and preference-aware ranking
 │
 ├── requirements.txt                # Python dependencies  $ 

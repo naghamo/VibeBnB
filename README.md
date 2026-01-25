@@ -91,7 +91,7 @@ As a result:
 The full offline pipeline is executed through the notebook:
 
 ```
-offline_pipeline_run.ipynb
+offline/offline_pipeline_run.ipynb
 ```
 
 To run the offline pipeline:

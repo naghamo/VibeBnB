@@ -185,6 +185,9 @@ offline computation, online retrieval, and application deployment:
 │   └── embeddings_fit.py           # Embedding construction and LSH indexing  
 │
 ├── eval/                           # Evaluation scripts and analysis utilities
+│   ├── query_suite_manager.py      # Query suite builder 
+│   ├── results_generator.py        # Similarity analysis results generator
+│   └── qualitative_eval.py         # Retrieval and reordering results saver for qualitative evaluation  
 │
 ├── static/                         # Static assets for the web interface  $ 
 ├── templates/                      # HTML templates for the Flask app  $ 

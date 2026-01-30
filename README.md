@@ -177,7 +177,7 @@ offline computation, online retrieval, and application deployment:
 │   └── data_join.py                # Cross-source data integration and joins
 │
 ├── EDA/                            # Exploratory data analysis
-│   └── data_analysis/              # Analysis notebooks and scripts
+│   └── data_analysis.ipynb         # Notebook analyzing our initial/final datasets
 │
 ├── offline/ 
 │   ├── offline_pipeline_run.ipynb  # Full offline pipeline execution notebook 

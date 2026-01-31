@@ -96,6 +96,8 @@ The full offline pipeline is executed through the notebook:
 ```
 offline/offline_pipeline_run.ipynb
 ```
+> ℹ️ **Offline Pipeline Note**  
+> All offline outputs (data and models) are **already stored in DBFS**, so rerunning this stage is **not required**.
 
 To run the offline pipeline:
 1. Clone the Repo into Databricks.

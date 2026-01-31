@@ -187,13 +187,13 @@ def build_global_models_and_save(
     print(f"[DONE] Finished in {time.perf_counter()-t_job:.2f}s")
 
 
-# -----------------------------
-# Run
-# -----------------------------
-# Default execution entrypoint for training and saving global embedding + LSH artifacts.
-build_global_models_and_save(
-    scored_input_path="dbfs:/vibebnb/data/europe_countries_scored_.parquet",
-    embedded_out_path="dbfs:/vibebnb/data/europe_countries_embedded_",
-    emb_model_path="dbfs:/vibebnb/models/embedding_pipeline_global_",
-    lsh_model_path="dbfs:/vibebnb/models/lsh_global_"
-)
+# # -----------------------------
+# # Run
+# # -----------------------------
+# # Default execution entrypoint for training and saving global embedding + LSH artifacts.
+# build_global_models_and_save(
+#     scored_input_path="dbfs:/vibebnb/data/europe_countries_scored_.parquet",
+#     embedded_out_path="dbfs:/vibebnb/data/europe_countries_embedded_",
+#     emb_model_path="dbfs:/vibebnb/models/embedding_pipeline_global_",
+#     lsh_model_path="dbfs:/vibebnb/models/lsh_global_"
+# )

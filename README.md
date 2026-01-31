@@ -1,5 +1,8 @@
-# 🏡 VibeBnB   
+# VibeBnB 🏡  
 A Similarity-Based, Preference-Aware Recommendation System for Airbnb Listings
+<p align="center">
+  <img src="static/logo.png" alt="VibeBnB Logo" width="200"/>
+</p>
 
 ---
 

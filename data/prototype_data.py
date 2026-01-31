@@ -22,8 +22,9 @@ SAMPLE_SIZE = 500
 TOP_N = 50
 TARGET_CCS = ["FR", "IT", "ES", "GB", "DE"]
 DIST_THRESHOLD = 10.0
-
+#############################################!!change this to your path!!###########################################
 REPO_STATIC_DIR = "/Workspace/Users/nagham.omar@campus.technion.ac.il/VibeBnB/static"
+
 SAMPLE_JSON_PATH = os.path.join(REPO_STATIC_DIR, "listings_sample_.json")
 NEIGHBORS_JSON_DIR = os.path.join(REPO_STATIC_DIR, "neighbors_json_")
 

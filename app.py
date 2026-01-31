@@ -10,7 +10,7 @@ from flask import Flask, render_template, request
 app = Flask("vibebnb_app")
 
 # ----------------------------
-# Europe country codes (for FILTERING)
+# Europe country codes (FILTERING)
 # ----------------------------
 EUROPE_CC = {
     "AD","AL","AM","AT","AX","AZ","BA","BE","BG","BY","CH","CY","CZ","DE","DK","DZ","EE","ES",
@@ -20,13 +20,11 @@ EUROPE_CC = {
 }
 
 # ----------------------------
-# Target countries (ONLY these 5)
+# Target countries (ONLY 5)
 # ----------------------------
 TARGET_COUNTRIES = ["FR", "IT", "ES", "GB", "DE"]
 
-# ----------------------------
-# Mode selection (OFFLINE ONLY)
-# ----------------------------
+
 VIBEBNB_MODE = "offline"
 
 # Online placeholders that was made to run with spark but insted we have the demo notebook since we can not run the job without the premisions of databrickes
@@ -142,7 +140,7 @@ def _normalize_weights_nonneg(weights: dict[str, float]) -> dict[str, float]:
     return {k: v / s for k, v in w.items()}
 
 # ----------------------------
-# Filtering logic (OFFLINE)
+# Filtering logic
 # ----------------------------
 def offline_filter_listings(country, city, min_rating, max_rating, min_price, max_price, limit=300):
     cc = _safe_upper(country) if country else ""
@@ -175,14 +173,7 @@ def offline_filter_listings(country, city, min_rating, max_rating, min_price, ma
     rows = rows[:max(1, int(limit))]
     return rows, cities
 
-# ----------------------------
-# OFFLINE: load precomputed neighbors from JSON files
-# Expected structure:
-#   static/neighbors_json/target_cc=IT/<target_id>.json
-#
-# File format:
-#   {"target_id": "...", "target_cc": "IT", "results": [ {...}, {...}, ... ] }
-# ----------------------------
+
 def offline_load_candidates(target_id: str, target_country: str):
     cc = _safe_upper(target_country)
     tid = str(target_id).strip()
@@ -233,7 +224,7 @@ def offline_rank_candidates(
 ):
     env_weights = env_weights or {}
 
-    # --- normalize everything together (like Spark order(...)) ---
+    # --- normalize everything together ---
     all_w = {
         "price": w_price,
         "property": w_property,
@@ -261,7 +252,7 @@ def offline_rank_candidates(
         except Exception:
             return float(default)
 
-    # --- Spark-like temperature score: 1 - diff/25 ---
+    # --- Spark-like temperature score---
     def temp_score_raw(row):
         if temp_pref is None or travel_month is None or not temp_w:
             return 0.0
@@ -275,8 +266,6 @@ def offline_rank_candidates(
             return 0.0
         diff = abs(t - float(temp_pref))
         return max(0.0, 1.0 - diff / 25.0)
-
-    # --- Spark-like budget score: partial credit by distance/2 ---
     def budget_score_raw(row):
         if not budget_w or not budget_pref:
             return 0.0
@@ -301,7 +290,6 @@ def offline_rank_candidates(
         if host_w:
             score += host_w * getf(r, "host_quality", 0.0)
 
-        # env components: expect *_norm columns (like Spark)
         for env_col, raw_w in env_weights.items():
             wv = float(w_norm.get(f"env::{env_col}", raw_w)) if normalize_all_weights else float(raw_w)
             if not wv:
@@ -319,8 +307,6 @@ def offline_rank_candidates(
         rr[score_col] = float(score)
         ranked.append(rr)
 
-    # Spark: orderBy(score desc).limit(k)
-    # Tie-break: keep your l2_dist tie-breaker (fine; Spark version didn't specify tie-break)
     ranked.sort(key=lambda x: (-(x.get(score_col) or 0.0), x.get("l2_dist") or 1e9))
     return ranked[: max(1, int(k_show))]
 
@@ -397,8 +383,8 @@ def filters():
 def preferences():
     """
     Comes from filters page after selecting a reference listing.
-    Target countries: ONLY 5 (FR, IT, ES, GB, DE).
-    n_candidates: ALWAYS 50.
+    Target countries:  (FR, IT, ES, GB, DE).
+    n_candidates: 50.
     """
     if request.method == "GET":
         return render_template("info.html", mode="offline", mode_reason="offline only")
@@ -456,97 +442,7 @@ def preferences():
         status=status
     )
 
-# @app.route("/results", methods=["GET", "POST"])
-# def results():
-#     if request.method == "GET":
-#         return render_template("info.html", mode="offline", mode_reason="offline only")
 
-#     target_id = (request.form.get("selected_listing_id", "") or "").strip()
-#     target_country = _safe_upper(request.form.get("target_country", ""))
-
-#     n_candidates = N_CANDIDATES_FIXED
-#     k_show = _to_int(request.form.get("k_show", "10"), 10)
-
-#     w_price = _to_float(request.form.get("w_price", "0"), 0.0) or 0.0
-#     w_property = _to_float(request.form.get("w_property", "0"), 0.0) or 0.0
-#     w_host = _to_float(request.form.get("w_host", "0"), 0.0) or 0.0
-#     w_temp = _to_float(request.form.get("w_temp", "0"), 0.0) or 0.0
-#     w_budget = _to_float(request.form.get("w_budget", "0"), 0.0) or 0.0
-
-#     temp_pref_raw = (request.form.get("temp_pref", "") or "").strip()
-#     temp_pref = _to_float(temp_pref_raw, None) if temp_pref_raw else None
-
-#     travel_month_raw = (request.form.get("travel_month", "") or "").strip()
-#     travel_month = _to_int(travel_month_raw, None) if travel_month_raw else None
-
-#     budget_pref = (request.form.get("budget_pref", "") or "").strip() or ""
-
-#     env_weights = {}
-#     for c in ENV_CHOICES:
-#         env_weights[c] = float(_to_float(request.form.get(f"w_{c}", "0"), 0.0) or 0.0)
-
-#     results_rows = []
-#     result_msg = None
-
-#     if not target_id:
-#         result_msg = "Missing selected_listing_id."
-#         return render_template("results.html", mode="offline", mode_reason="offline only", results_rows=[], result=result_msg)
-
-#     if not target_country:
-#         result_msg = "Please choose a target country."
-#         return render_template("results.html", mode="offline", mode_reason="offline only", results_rows=[], result=result_msg)
-
-#     if target_country not in TARGET_COUNTRIES:
-#         result_msg = f"Target country must be one of: {', '.join(TARGET_COUNTRIES)}."
-#         return render_template("results.html", mode="offline", mode_reason="offline only", results_rows=[], result=result_msg)
-
-#     try:
-#         t0 = time.perf_counter()
-
-#         candidates, path_used = offline_load_candidates(target_id, target_country)
-#         if not candidates:
-#             expected = Path(NEIGHBORS_JSON_DIR) / f"target_cc={target_country}" / f"{target_id}.json"
-#             expected_alt = Path(NEIGHBORS_JSON_DIR) / f"target_cc={target_country}" / "json" / f"{target_id}.json"
-#             raise RuntimeError(
-#                 "Offline mode: no precomputed neighbors found.\n"
-#                 f"Tried:\n- {expected}\n- {expected_alt}\n"
-#                 f"Neighbors JSON dir: {NEIGHBORS_JSON_DIR}"
-#             )
-
-#         candidates = candidates[:N_CANDIDATES_FIXED]
-
-#         results_rows = offline_rank_candidates(
-#             candidates=candidates,
-#             k_show=k_show,
-#             w_price=w_price,
-#             w_property=w_property,
-#             w_host=w_host,
-#             w_temp=w_temp,
-#             w_budget=w_budget,
-#             env_weights=env_weights,
-#             temp_pref=temp_pref,
-#             travel_month=travel_month,
-#             budget_pref=budget_pref,
-#         )
-
-#         t1 = time.perf_counter()
-#         result_msg = (
-#             f"Offline: ranked top {len(results_rows)} "
-#             f"(loaded {len(candidates)} / {N_CANDIDATES_FIXED} from {path_used}). "
-#             f"({t1 - t0:.2f}s)"
-#         )
-
-#     except Exception as e:
-#         result_msg = f"Error (offline): {e}"
-#         results_rows = []
-
-#     return render_template(
-#         "results.html",
-#         mode="offline",
-#         mode_reason="offline only",
-#         results_rows=results_rows,
-#         result=result_msg
-#     )
 @app.route("/results", methods=["GET", "POST"])
 def results():
     if request.method == "GET":
@@ -633,7 +529,6 @@ def results():
             budget_pref=budget_pref,
         )
 
-        # ✅ UI: keep only user-facing fields (hide dist/similarity)
         KEEP = [
             "listing_title",
             "addr_cc",

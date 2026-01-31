@@ -121,6 +121,7 @@ def pick_diverse_props(df_all, df_emb, lsh_model, n_props, exclude_countries=[])
 def pick_smallest_and_largest_ccs(df_all, n_from_each=3):
     """
     Pick the smallest and largest country codes by frequency, and return them as lists.
+    Only consider countries with at least 50 observations.
     :param df_all: the entire airbnb dataset
     :param n_from_each: the number of country codes to return for each of the two groups
     :return: a tuple of two lists, the first being the smallest country codes, the second being the largest
@@ -129,6 +130,7 @@ def pick_smallest_and_largest_ccs(df_all, n_from_each=3):
         df_all.select(['addr_cc'])
             .groupBy('addr_cc')
             .count()
+            .where(F.col('count') >= 50)
             .orderBy(F.col('count').asc())
     )
     smallest_ccs = country_value_counts.limit(n_from_each).toPandas()['addr_cc'].values
@@ -146,6 +148,7 @@ def build_OCQS(df_all, df_emb, lsh_model, n_queries=24):
     :param df_emb: the embedding dataframe
     :param lsh_model: the LSH model
     :param n_queries: the number of queries to build
+    :return: DataFrame of queries with property_id, country_code, and dest_country columns
     """
     queries, cc_pool = pick_diverse_props(df_all, df_emb, lsh_model, n_props=n_queries)
     dest_countries = random.sample(cc_pool, k=n_queries)
@@ -167,6 +170,7 @@ def build_MCQS(df_all, df_emb, lsh_model, n_props=10, countries=3):
     :param lsh_model: the LSH model
     :param n_props: the number of diverse properties to pick
     :param countries: either a specified list of countries, or an integer specifying the number of countries to pick
+    :return: tuple of (queries DataFrame, targets_data DataFrame)
     """
 
     dest_countries = []
@@ -185,6 +189,15 @@ def build_MCQS(df_all, df_emb, lsh_model, n_props=10, countries=3):
     return queries, targets_data
 
 def retrieve_suite_results(df_all, df_emb, lsh_model, query_suite):
+    """
+    Retrieve the top 50 candidates for each query in the query suite and return a DataFrame with results.
+
+    :param df_all: DataFrame containing all property data
+    :param df_emb: DataFrame containing property embeddings
+    :param lsh_model: Trained LSH model for similarity search
+    :param query_suite: DataFrame or pandas DataFrame with queries (property_id, country_code, dest_country)
+    :return: Spark DataFrame with retrieval results, including candidate properties and similarity metrics
+    """
 
     # Retrieve top 50 for each query, and save it to a dataframe
     if not type(query_suite) == pd.DataFrame:
@@ -242,6 +255,16 @@ def retrieve_suite_results(df_all, df_emb, lsh_model, query_suite):
     return suite_results
 
 def build_MCQS_and_save_results(df_all_path, df_emb_path, lsh_model_path, MCQS_out_path, MCQS_data_path, MCQS_results_out_path):
+    """
+    Build a multiple countries query suite (MCQS), save the suite, the associated data, and the retrieval results to disk.
+
+    :param df_all_path: Path to the full property data parquet file
+    :param df_emb_path: Path to the property embeddings parquet file
+    :param lsh_model_path: Path to the trained LSH model
+    :param MCQS_out_path: Output path for the MCQS query suite parquet
+    :param MCQS_data_path: Output path for the MCQS data parquet
+    :param MCQS_results_out_path: Output path for the MCQS retrieval results parquet
+    """
 
     # Load the dataframes and lsh model
     t0 = time.perf_counter()
@@ -297,9 +320,7 @@ def build_MCQS_and_save_results(df_all_path, df_emb_path, lsh_model_path, MCQS_o
     print(f"[QSM] Saved multiple countries query suite RETRIEVAL RESULTS to {MCQS_results_out_path}")
     print("[QSM] Done!")
 
-# MCQS_DATA_PATH = "dbfs:/vibebnb/data/query_suite_multiple_countries_data.parquet"
-
-
+# ---- Run ----
 build_MCQS_and_save_results(
     df_all_path=FULL_PATH,
     df_emb_path=EMBEDDED_PATH,

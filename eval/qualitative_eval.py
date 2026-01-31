@@ -129,7 +129,6 @@ def save_reordered(cand_df, id: int, dest_cc: str, configs):
         pdf = cand_df_reordered.select(['final_score'] + save_cols).toPandas()
         pdf.to_csv(f"{cfg_name}_{id}_{dest_cc}.csv", index=False)
 
-# ---- Run ----
 def run_pipeline(df_emb, df_all, MCQS_df):
     ENV_COLS = infer_env_cols_from_columns(df_all.columns)
     configs = get_configs(ENV_COLS)
@@ -137,3 +136,9 @@ def run_pipeline(df_emb, df_all, MCQS_df):
     for query_id, dest_cc in queries.items():
         cand_df = retrieve_for_id(query_id, dest_cc, MCQS_df)
         save_reordered(cand_df, query_id, dest_cc, configs)
+
+# ---- Run ----
+df_emb = spark.read.parquet(EMBEDDED_PATH)
+df_all = spark.read.parquet(FULL_PATH)
+MCQS_df = spark.read.parquet(MCQS_RESULTS_PATH)
+run_pipeline(df_emb, df_all, MCQS_df)

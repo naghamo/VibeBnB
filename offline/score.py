@@ -216,37 +216,37 @@ def scoring_all(df: DataFrame) -> DataFrame:
     return df
 
 
-# Main job
-if __name__ == "__main__":
-    spark = SparkSession.builder.getOrCreate()
+# # Main job
+# if __name__ == "__main__":
+#     spark = SparkSession.builder.getOrCreate()
 
-    t_job = time.perf_counter()
-    print("[SCORING] Job started")
+#     t_job = time.perf_counter()
+#     print("[SCORING] Job started")
 
-    # Input: per-country joined data (Airbnb + city metadata + OSM env counts).
-    in_path = "dbfs:/vibebnb/data/europe_countries_joined_"
-    # Output: scored dataset used by embedding + retrieval stages.
-    out_path = "dbfs:/vibebnb/data/europe_countries_scored_.parquet"
+#     # Input: per-country joined data (Airbnb + city metadata + OSM env counts).
+#     in_path = "dbfs:/vibebnb/data/europe_countries_joined_"
+#     # Output: scored dataset used by embedding + retrieval stages.
+#     out_path = "dbfs:/vibebnb/data/europe_countries_scored_.parquet"
 
-    # Load and cache the full dataset (reused across multiple scoring stages).
-    t0 = time.perf_counter()
-    df = spark.read.parquet(in_path).persist(StorageLevel.MEMORY_AND_DISK)
-    count = df.count()
-    print(f"[SCORING] Loaded {count:,} rows in {time.perf_counter() - t0:.2f}s")
+#     # Load and cache the full dataset (reused across multiple scoring stages).
+#     t0 = time.perf_counter()
+#     df = spark.read.parquet(in_path).persist(StorageLevel.MEMORY_AND_DISK)
+#     count = df.count()
+#     print(f"[SCORING] Loaded {count:,} rows in {time.perf_counter() - t0:.2f}s")
 
-    # Apply scoring pipeline.
-    df_scored = scoring_all(df)
+#     # Apply scoring pipeline.
+#     df_scored = scoring_all(df)
 
-    # Save partitioned by country for downstream country-scoped operations.
-    t0 = time.perf_counter()
-    (
-        df_scored
-        .write
-        .mode("overwrite")
-        .partitionBy("addr_cc")
-        .parquet(out_path)
-    )
-    print(f"[SCORING] Saved output in {time.perf_counter() - t0:.2f}s")
+#     # Save partitioned by country for downstream country-scoped operations.
+#     t0 = time.perf_counter()
+#     (
+#         df_scored
+#         .write
+#         .mode("overwrite")
+#         .partitionBy("addr_cc")
+#         .parquet(out_path)
+#     )
+#     print(f"[SCORING] Saved output in {time.perf_counter() - t0:.2f}s")
 
-    df.unpersist()
-    print(f"[SCORING] Job finished in {time.perf_counter() - t_job:.2f}s")
+#     df.unpersist()
+#     print(f"[SCORING] Job finished in {time.perf_counter() - t_job:.2f}s")

@@ -126,8 +126,7 @@ stored in DBFS:
 - preference-aware ranking,
 - inspection of recommendation results.
 
-The demo notebook does **not** require rerunning the offline pipeline and can be
-executed independently.
+Since all offline outputs (data and models) are already stored in DBFS, the demo notebook **does not** require rerunning the offline pipeline and can be executed independently.
 
 ---
 

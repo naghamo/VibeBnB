@@ -1,9 +1,9 @@
-# VibeBnB 🏡  
+# 🏡 VibeBnB   
 A Similarity-Based, Preference-Aware Recommendation System for Airbnb Listings
 
 ---
 
-## Overview
+## 👀 Overview
 
 **VibeBnB** is a data-driven recommendation system designed to help users discover
 Airbnb listings with a similar *“vibe”* across different cities and countries.
@@ -25,7 +25,7 @@ control**.
 
 ---
 
-## Data Sources
+## 🗂️ Data Sources
 
 VibeBnB integrates three heterogeneous datasets:
 
@@ -47,7 +47,7 @@ approximately 560 major travel cities.
 
 ---
 
-## System Architecture
+## 🏗️ System Architecture
 
 The system is organized into two pipelines:
 
@@ -71,7 +71,7 @@ Triggered by user interaction and consists of:
 
 ---
 
-## How to Run
+## ▶️ How to Run
 
 ### Execution Environment
 
@@ -86,7 +86,7 @@ As a result:
 
 ---
 
-## Running the Offline Pipeline
+## ⚙️ Running the Offline Pipeline
 
 The full offline pipeline is executed through the notebook:
 
@@ -107,7 +107,7 @@ No additional setup or data loading is required.
 
 ---
 
-## Running the Online Pipeline
+## 🚀 Running the Online Pipeline
 
 The online pipeline can be explored through the demonstration notebook:
 
@@ -126,7 +126,7 @@ executed independently.
 
 ---
 
-## Web Interface Prototype
+## 🌐 Web Interface Prototype
 
 A lightweight interactive prototype of the system is deployed and available at:
 
@@ -153,7 +153,7 @@ the precomputed candidates according to user preferences.
 
 ---
 
-## Notes
+## 📝 Notes
 
 - The system follows an **offline-heavy, online-light** design.
 - All similarity computations are interpretable and reproducible.
@@ -161,12 +161,16 @@ the precomputed candidates according to user preferences.
 - The project can be extended to additional countries or larger datasets with
   minimal changes to the pipeline.
 
-## Repository Structure
+## 🧱 Repository Structure
 
 The repository is organized to clearly separate data processing, analysis,
 offline computation, online retrieval, and application deployment:
  
-*All the files marked with  $  are for implementing the prototype interface with Flask with the Databrickes App
+> ⚠️**Note on Web Prototype Files (marked with  $)**  
+> Files marked with `$` are designed specifically for **Databricks Apps** and cannot be run locally.  
+> There is **no need to run or modify** these files to use the prototype, simply open the deployed Databricks App link above.  
+> The Flask code is included **for documentation and reproducibility only**.
+
  ```
 .
 ├── data/                           # Data loading and integration logic

@@ -46,7 +46,8 @@ into high-level categories to capture neighborhood “vibe”.
 ### City-Level Travel Data
 Provides coarse, destination-level context such as monthly average temperatures,
 budget classification, and tourism-related indicators. This dataset covers
-approximately 560 major travel cities.
+approximately 560 major travel cities(177 after filtering
+to European destinations).
 
 ---
 

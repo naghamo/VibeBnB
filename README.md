@@ -87,7 +87,7 @@ As a result:
 - there is **no need to manually download or load raw datasets**,
 - all required data artifacts (cleaned data, scores, embeddings, indices, and
   precomputed candidates) are already persisted and reused across runs.
-
+> Each file manages its required dependencies internally, so there is **no need to manually run `requirements.txt`**.
 ---
 
 ## ⚙️ Running the Offline Pipeline
@@ -209,7 +209,7 @@ offline computation, online retrieval, and application deployment:
 │
 ├── retrieve_rank.py                # Online retrieval and preference-aware ranking
 │
-├── requirements.txt                # Python dependencies  $ 
+├── requirements.txt                # Python dependencies for Databricks App $ 
 └── README.md                       # Project documentation
 
 

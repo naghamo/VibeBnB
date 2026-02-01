@@ -1,4 +1,4 @@
-#!pip install joypy
+!pip install joypy #requirements for ridge plot
 
 from pyspark.sql import functions as F
 from pyspark.storagelevel import StorageLevel

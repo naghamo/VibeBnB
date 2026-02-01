@@ -87,9 +87,11 @@ As a result:
 - there is **no need to manually download or load raw datasets**,
 - all required data artifacts (cleaned data, scores, embeddings, indices, and
   precomputed candidates) are already persisted and reused across runs.
-> Each file manages its required dependencies internally, so there is **no need to manually run `requirements.txt`**.
----
+  
+> Each file manages its required dependencies internally, so there is **no need to manually run `requirements.txt`**.  
+> The current `requirements.txt` file is provided **only for the Databricks App deployment**.
 
+---
 ## ⚙️ Running the Offline Pipeline
 
 The full offline pipeline is executed through the notebook:
